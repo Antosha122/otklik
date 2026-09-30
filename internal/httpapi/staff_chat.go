@@ -74,8 +74,10 @@ type noteReq struct {
 
 func (s *Server) handleStaffNotes(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
-	if p.Role == domain.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, errorResp{"notes are not available to admin"})
+	// Заметки — служебный инструмент эксперта: оператор и администратор
+	// не читают их и на уровне API.
+	if p.Role != domain.RoleExpert {
+		writeJSON(w, http.StatusForbidden, errorResp{"notes are available to expert only"})
 		return
 	}
 	id, ok := s.appealID(w, r)
