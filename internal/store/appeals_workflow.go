@@ -98,6 +98,7 @@ func (st *Store) FlagCrisisFromMessage(ctx context.Context, appealID uuid.UUID) 
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE appeals SET crisis_detected = TRUE,
+				priority = 'urgent',
 				version = version + 1, updated_at = now()
 			WHERE id = $1 AND NOT crisis_detected`, appealID); err != nil {
 			return err
@@ -115,6 +116,10 @@ func (st *Store) SetPriority(ctx context.Context, appealID uuid.UUID,
 	actorID *uuid.UUID, actorRole domain.Role, p domain.Priority, reason string) (Appeal, error) {
 	return st.withAppealLock(ctx, appealID, func(ctx context.Context, tx *sql.Tx, a Appeal) error {
 		if a.Status.Terminal() {
+			return domain.ErrConflict
+		}
+		// Кризисное обращение всегда срочное: понижать приоритет нельзя (ТЗ «Кризисные обращения»).
+		if a.CrisisDetected && p != domain.PriorityUrgent {
 			return domain.ErrConflict
 		}
 		if _, err := tx.ExecContext(ctx, `
