@@ -90,14 +90,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setCookie(w, staffCookie, token)
-	// Токен дублируется в ответе: фронтенд шлёт его в Authorization — разные учётки в разных вкладках.
+	// Токен живёт только в HttpOnly-куке: дублирование в теле ответа убрано,
+	// фронтенд ходит исключительно через cookie-сессию.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":          u.ID,
-		"login":            u.Login,
-		"role":             u.Role,
-		"specialist_group": u.SpecialistGroup,
-		"active":           u.Active,
-		"session_token":    token,
+		"user_id":              u.ID,
+		"login":                u.Login,
+		"role":                 u.Role,
+		"specialist_group":     u.SpecialistGroup,
+		"active":               u.Active,
+		"must_change_password": u.MustChangePassword,
 	})
 }
 
@@ -210,6 +211,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if p.IsStaff() {
 		resp["login"] = p.Login
 		resp["user_id"] = p.UserID
+		resp["must_change_password"] = p.MustChangePassword
 	} else {
 		resp["appeal_id"] = p.AppealID
 	}
