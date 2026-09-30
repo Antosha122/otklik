@@ -119,8 +119,10 @@ func Seed(ctx context.Context, d *sql.DB, defaultPwd string) error {
 			{"social1", "expert", "social_pedagogues"},
 		}
 		for _, u := range users {
+			// must_change_password=true: демо-пароль обязан быть сменён при первом входе.
 			if _, err := d.ExecContext(ctx,
-				`INSERT INTO users (login, password_hash, role, specialist_group) VALUES ($1, $2, $3, $4)`,
+				`INSERT INTO users (login, password_hash, role, specialist_group, must_change_password)
+				 VALUES ($1, $2, $3, $4, true)`,
 				u.login, string(hash), u.role, u.group); err != nil {
 				return err
 			}
