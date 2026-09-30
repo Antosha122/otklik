@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111827">
+<meta name="theme-color" content="#eef1f6">
 <title>Отклик — вход сотрудника</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b6ef5'/%3E%3Ctext x='32' y='44' font-size='34' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'%3EО%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/assets/css/base.css">
 <link rel="stylesheet" href="/assets/css/components.css">
 <link rel="stylesheet" href="/assets/css/layout.css">
@@ -24,14 +25,21 @@ document.body.classList.add(window.UI_MODE + "-mode");
 <main>
 <section id="secStaff">
   <div class="card" id="loginCard">
-    <h2>Вход сотрудника</h2>
+    <div class="login-head">
+      <div class="login-mark">О</div>
+      <h2>Рабочий портал</h2>
+      <p class="login-sub">Войдите, чтобы продолжить — интерфейс подстроится под вашу роль</p>
+    </div>
     <div class="row">
       <div><label>Логин</label><input type="text" id="stLogin" placeholder="operator" autocapitalize="none" autocomplete="username"></div>
       <div><label>Пароль</label><input type="password" id="stPass" placeholder="otklik-demo-2026" autocomplete="current-password"></div>
     </div>
-    <div class="note" style="margin-top:8px">Демо: admin / operator / psychologist1 / psychologist2 / lawyer1 / conflictolog1 / social1 — пароль otklik-demo-2026</div>
     <div id="stErr" class="err-box hidden"></div>
     <button class="act" data-action="staff-login">Войти</button>
+    <div class="note" style="text-align:center;margin-top:14px">Демо-аккаунты (пароль <b>otklik-demo-2026</b>):</div>
+    <div style="text-align:center;margin-bottom:6px">
+      <span class="demo-chip">admin</span><span class="demo-chip">operator</span><span class="demo-chip">psychologist1</span><span class="demo-chip">lawyer1</span><span class="demo-chip">conflictolog1</span><span class="demo-chip">social1</span>
+    </div>
     <div class="note">После входа вы попадёте на страницу своей роли: оператор, специалист или администратор.</div>
   </div>
 </section>
