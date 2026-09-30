@@ -42,15 +42,20 @@ func main() {
 
 	// ТЗ 5.1: «закрыто без ответа» переводит система — фоновый джоб
 	// закрывает обращения, где заявитель не возвращался дольше N дней.
+	// Он же раз в час подчищает истёкшие сессии (обе таблицы).
 	go func() {
 		run := func() {
 			n, err := st.AutoCloseNoResponse(ctx)
 			if err != nil {
 				log.Printf("janitor: auto-close: %v", err)
-				return
-			}
-			if n > 0 {
+			} else if n > 0 {
 				log.Printf("janitor: closed %d appeal(s) without applicant response", n)
+			}
+			purged, err := st.PurgeExpiredSessions(ctx)
+			if err != nil {
+				log.Printf("janitor: purge sessions: %v", err)
+			} else if purged > 0 {
+				log.Printf("janitor: purged %d expired session(s)", purged)
 			}
 		}
 		run()
