@@ -77,9 +77,9 @@ func New(cfg config.Config, st *store.Store) http.Handler {
 
 	r.Get("/api/health", healthHandler)
 	// Страницы заявителя: каждая логика — отдельный эндпоинт.
-	r.Get("/", s.pageFor("applicant", "index.html"))   // приветственное окно
-	r.Get("/new", s.pageFor("applicant", "new.html"))   // подача обращения
-	r.Get("/track", s.pageFor("applicant", "track.html")) // вход по трек-номеру
+	r.Get("/", s.pageFor("applicant", "index.html"))        // приветственное окно
+	r.Get("/new", s.pageFor("applicant", "new.html"))       // подача обращения
+	r.Get("/track", s.pageFor("applicant", "track.html"))   // вход по трек-номеру
 	r.Get("/appeal", s.pageFor("applicant", "appeal.html")) // чат и статус обращения
 	r.Handle("/assets/*", assetsHandler())
 	r.Get("/api/categories", s.handlePublicCategories)
@@ -121,7 +121,7 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 
 	r.Get("/api/health", healthHandler)
 	// Страницы сотрудника: вход, отдельная панель под каждую роль и карточка обращения.
-	r.Get("/", s.pageFor("staff", "login.html"))       // редирект на нужную панель делает JS
+	r.Get("/", s.pageFor("staff", "login.html")) // редирект на нужную панель делает JS
 	r.Get("/login", s.pageFor("staff", "login.html"))
 	r.Get("/operator", s.pageFor("staff", "operator.html"))
 	r.Get("/expert", s.pageFor("staff", "expert.html"))
@@ -208,7 +208,7 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 type principalCtxKey struct{}
 
 // Публичный порт слушает только куки заявителей, служебный — только сессии
-// сотрудников (Bearer-токен вкладки или кука).
+// сотрудников (HttpOnly-кука; bearer в теле логина больше не выдаётся).
 func (s *Server) authMW(allowStaff, allowApplicant bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +221,7 @@ func (s *Server) authMW(allowStaff, allowApplicant bool) func(http.Handler) http
 					userID, ok, err := s.st.GetStaffSession(r.Context(), hash)
 					if err == nil && ok {
 						if u, err := s.st.GetUserByID(r.Context(), userID); err == nil && u.Active {
-							p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login}
+							p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login, MustChangePassword: u.MustChangePassword}
 							found = true
 						}
 					}
@@ -232,7 +232,7 @@ func (s *Server) authMW(allowStaff, allowApplicant bool) func(http.Handler) http
 						userID, ok, err := s.st.GetStaffSession(r.Context(), hash)
 						if err == nil && ok {
 							if u, err := s.st.GetUserByID(r.Context(), userID); err == nil && u.Active {
-								p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login}
+								p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login, MustChangePassword: u.MustChangePassword}
 								found = true
 							}
 						}
@@ -276,6 +276,11 @@ func (s *Server) requireApplicant(next http.Handler) http.Handler {
 func (s *Server) requireStaff(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p, ok := principalFrom(r.Context()); ok && p.IsStaff() {
+			// Демо-пароль должен быть сменён: до смены доступен только POST /api/auth/password.
+			if p.MustChangePassword && r.URL.Path != "/api/auth/password" {
+				writeJSON(w, http.StatusForbidden, errorResp{"password change required"})
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -289,6 +294,11 @@ func (s *Server) requireRole(roles ...domain.Role) func(http.Handler) http.Handl
 			p, ok := principalFrom(r.Context())
 			if !ok || !p.IsStaff() {
 				writeJSON(w, http.StatusUnauthorized, errorResp{"staff authentication required"})
+				return
+			}
+			// Демо-пароль должен быть сменён до работы с API (кроме самой смены пароля).
+			if p.MustChangePassword && r.URL.Path != "/api/auth/password" {
+				writeJSON(w, http.StatusForbidden, errorResp{"password change required"})
 				return
 			}
 			for _, role := range roles {
