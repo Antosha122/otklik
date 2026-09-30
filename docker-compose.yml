@@ -10,7 +10,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5433:5432" # хост-доступ для интеграционных тестов (otklik_it_test)
+      # Только loopback: порт нужен лишь для локальных интеграционных тестов,
+      # наружу (интернет) БД не торчит.
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U otklik -d otklik"]
       interval: 5s
@@ -27,16 +29,49 @@ services:
       ATTACHMENTS_DIR: "/app/data/attachments"
       SESSION_TTL_MIN: "120"
       SEED_DEFAULT_PWD: "${SEED_DEFAULT_PWD:-otklik-demo-2026}"
+      # 1 = куки только по HTTPS (прод за Caddy); локальная разработка — 0 в .env.
+      COOKIE_SECURE: "${COOKIE_SECURE:-1}"
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      # Прямой доступ только с localhost; наружу всё идёт через caddy (TLS).
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
     volumes:
       - appdata:/app/data
     depends_on:
       db:
+        condition: service_healthy
+    healthcheck:
+      # busybox-wget есть в alpine-образе; проверяем оба порта приложения.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/health && wget -q -O /dev/null http://127.0.0.1:8081/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # TLS-терминация: PUBLIC_SITE -> app:8080 (заявители), STAFF_SITE -> app:8081 (сотрудники).
+  # Сайты задаются в .env (см. .env.example); домены — Let's Encrypt, IP — самоподписанный сертификат.
+  caddy:
+    image: caddy:2-alpine
+    container_name: otklik-caddy
+    environment:
+      PUBLIC_SITE: "${PUBLIC_SITE:-localhost}"
+      STAFF_SITE: "${STAFF_SITE:-localhost:8443}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
   pgdata:
   appdata:
+  caddy_data:
+  caddy_config:
