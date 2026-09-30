@@ -169,11 +169,10 @@ async function refreshDetail(silent) {
     || '<div class="note">пока нет сообщений</div>';
   $('dMsgs').scrollTop = 1e9;
   const isExpertRole = !!me && me.role === 'expert';
-  const canNotes = isExpertRole || (!!me && me.role === 'operator');
-  $('dNotesWrap').classList.toggle('hidden', !canNotes);
+  $('dNotesWrap').classList.toggle('hidden', !isExpertRole);
   $('dNoteForm').classList.toggle('hidden', !isExpertRole);
   $('dNotesRestricted').classList.toggle('hidden', !(me && me.role === 'admin'));
-  if (canNotes) {
+  if (isExpertRole) {
     try {
       const notes = (await api('GET', '/api/appeals/' + detailId + '/notes')).notes || [];
       $('dNotes').innerHTML = notes.map((n) =>
