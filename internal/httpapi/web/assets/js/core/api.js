@@ -1,20 +1,23 @@
-const STAFF_TOKEN_KEY = 'otklik_staff_token';
-
-export const staffToken = () => sessionStorage.getItem(STAFF_TOKEN_KEY);
-export const setStaffToken = (t) => sessionStorage.setItem(STAFF_TOKEN_KEY, t);
-export const clearStaffToken = () => sessionStorage.removeItem(STAFF_TOKEN_KEY);
+// Все запросы ходят на свой источник и аутентифицируются HttpOnly-кукой
+// (otklik_staff / otklik_applicant) — токен в sessionStorage не хранится.
+// Любая ошибка, вылетающая наружу, уже переведена на русский (humanError).
+import { humanError } from './errors.js';
 
 export async function api(method, path, body) {
   const opt = { method, headers: {} };
-  const tk = staffToken();
-  if (tk) opt.headers['Authorization'] = 'Bearer ' + tk;
   if (body !== undefined) {
     opt.headers['Content-Type'] = 'application/json; charset=utf-8';
     opt.body = JSON.stringify(body);
   }
-  const res = await fetch(path, opt);
+  let res;
+  try {
+    res = await fetch(path, opt);
+  } catch (e) {
+    // Сеть недоступна / сервер не отвечает — fetch бросает TypeError('Failed to fetch').
+    throw new Error('Нет соединения с сервером — проверьте подключение к сети');
+  }
   let data = null;
   try { data = await res.json(); } catch (e) { /* пустое тело — это нормально */ }
-  if (!res.ok) throw new Error(data && data.error ? data.error : 'HTTP ' + res.status);
+  if (!res.ok) throw new Error(humanError(data && data.error, res.status));
   return data;
 }
