@@ -1,35 +1,66 @@
-/* Каркас страницы: шапка, контейнер контента и режимы портов.
+/* Каркас: стеклянная шапка, контейнер, лендинг выбора роли, режимы портов.
    Публичный порт показывает только раздел заявителя, служебный — только
-   панель сотрудника (класс на body ставит bootstrap-скрипт в index.html). */
+   панель сотрудника (класс на body ставит bootstrap-скрипт страницы). */
+
 header {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: #111827;
-  color: #fff;
-  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, .25);
+  padding: 12px 16px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .82);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(228, 233, 241, .9);
 }
 
 header .top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 header h1 {
-  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
   margin: 0;
+  font-size: 17.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+/* Логотип-знак: градиентная плашка с «О» в цвете роли. */
+header h1::before {
+  content: "О";
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, var(--acc), var(--acc-2));
+  box-shadow: var(--sh-acc);
+  flex: none;
 }
 
 header .who {
   margin-left: auto;
-  font-size: 13px;
-  color: #9ca3af;
   max-width: 45%;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--acc-soft);
+  color: var(--acc);
+  font-size: 12.5px;
+  font-weight: 600;
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -37,14 +68,15 @@ header .who {
 }
 
 main {
-  max-width: 760px;
+  max-width: 860px;
   margin: 0 auto;
-  padding: 14px 12px calc(40px + var(--safe-b));
+  padding: 22px 14px calc(48px + var(--safe-b));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
+/* Режимы портов. */
 .staff-mode #secApplicant {
   display: none !important;
 }
@@ -58,11 +90,124 @@ main {
 }
 
 .applicant-mode #secApplicant {
-  display: block !important;
+  display: block;
+}
+
+/* Лендинг (index.html) — только выбор роли; дальше сразу /new.
+   Служебному порту выбор не нужен: он скрыт классом staff-mode. */
+.staff-mode #roleChoice {
+  display: none !important;
 }
 
 .grid2 {
   display: grid;
   grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Экран выбора роли. */
+.hero {
+  text-align: center;
+  padding: 26px 6px 8px;
+}
+
+.hero h2 {
+  margin: 0 0 10px;
+  font-size: clamp(26px, 5vw, 34px);
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+
+.hero .hero-sub {
+  color: var(--mut);
+  font-size: 16.5px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 14px;
+  margin-top: 24px;
+  text-align: left;
+}
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 182px;
+  padding: 22px 20px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--sh-sm);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.role-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--sh-md);
+  border-color: var(--acc);
+}
+
+.role-card:active {
+  transform: translateY(-1px);
+}
+
+.role-ico {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  font-size: 24px;
+  background: var(--acc-soft);
+}
+
+.role-card h3 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.role-card p {
+  margin: 0;
+  color: var(--mut);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.role-go {
+  margin-top: auto;
+  padding-top: 10px;
+  color: var(--acc);
+  font-weight: 700;
+  font-size: 14.5px;
+}
+
+.role-card:hover .role-go {
+  text-decoration: underline;
+}
+
+.hero-foot {
+  margin-top: 20px;
+  color: var(--mut);
+  font-size: 13.5px;
+}
+
+/* Возврат к уже отправленному обращению — спокойная ссылка под картами. */
+.hero-back {
+  margin-top: 14px;
+}
+
+@media (min-width: 640px) {
+  .choice-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
