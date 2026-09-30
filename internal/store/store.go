@@ -15,19 +15,20 @@ type Store struct {
 func New(db *sql.DB) *Store { return &Store{DB: db} }
 
 type User struct {
-	ID              uuid.UUID `json:"id"`
-	Login           string    `json:"login"`
-	Role            string    `json:"role"`
-	SpecialistGroup string    `json:"specialist_group"`
-	Active          bool      `json:"active"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID                 uuid.UUID `json:"id"`
+	Login              string    `json:"login"`
+	Role               string    `json:"role"`
+	SpecialistGroup    string    `json:"specialist_group"`
+	Active             bool      `json:"active"`
+	MustChangePassword bool      `json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
-const userCols = `id, login, role, specialist_group, active, created_at`
+const userCols = `id, login, role, specialist_group, active, must_change_password, created_at`
 
 func scanUser(s interface{ Scan(...any) error }) (User, error) {
 	var u User
-	err := s.Scan(&u.ID, &u.Login, &u.Role, &u.SpecialistGroup, &u.Active, &u.CreatedAt)
+	err := s.Scan(&u.ID, &u.Login, &u.Role, &u.SpecialistGroup, &u.Active, &u.MustChangePassword, &u.CreatedAt)
 	return u, err
 }
 
@@ -44,7 +45,7 @@ func (st *Store) GetUserByLogin(ctx context.Context, login string) (User, string
 		`SELECT `+userCols+`, password_hash FROM users WHERE login = $1`, login)
 	var u User
 	var hash string
-	err := row.Scan(&u.ID, &u.Login, &u.Role, &u.SpecialistGroup, &u.Active, &u.CreatedAt, &hash)
+	err := row.Scan(&u.ID, &u.Login, &u.Role, &u.SpecialistGroup, &u.Active, &u.MustChangePassword, &u.CreatedAt, &hash)
 	return u, hash, err
 }
 
@@ -97,9 +98,12 @@ func (st *Store) SetUserActive(ctx context.Context, id uuid.UUID, active bool) e
 	return tx.Commit()
 }
 
-// UpdateUserPassword заменяет хеш пароля пользователя (смена пароля самим сотрудником).
+// UpdateUserPassword заменяет хеш пароля пользователя (смена пароля самим
+// сотрудником) и снимает флаг обязательной смены демо-пароля.
 func (st *Store) UpdateUserPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
-	_, err := st.DB.ExecContext(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, id, passwordHash)
+	_, err := st.DB.ExecContext(ctx,
+		`UPDATE users SET password_hash = $2, must_change_password = false WHERE id = $1`,
+		id, passwordHash)
 	return err
 }
 
