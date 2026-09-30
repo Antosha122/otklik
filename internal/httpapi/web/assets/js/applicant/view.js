@@ -1,5 +1,6 @@
 import { $, esc, fmtTime, badge, kv, toast } from '../core/dom.js';
 import { api } from '../core/api.js';
+import { humanError } from '../core/errors.js';
 import { ruStatus, ruAuthor } from '../core/i18n.js';
 import { createPoller } from '../core/poller.js';
 import { registerActions } from '../core/actions.js';
@@ -108,7 +109,7 @@ async function apUpload() {
     const res = await fetch('/api/appeals/me/attachments', { method: 'POST', body: fd });
     if (!res.ok) {
       const d = await res.json().catch(() => null);
-      toast((d && d.error) || ('HTTP ' + res.status));
+      toast(humanError(d && d.error, res.status));
       continue;
     }
     uploaded++;
