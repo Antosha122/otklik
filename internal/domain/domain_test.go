@@ -1,4 +1,4 @@
-package tests
+package domain_test
 
 import (
 	"regexp"
