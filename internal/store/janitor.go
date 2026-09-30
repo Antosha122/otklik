@@ -9,6 +9,25 @@ import (
 	"otklik/internal/domain"
 )
 
+// PurgeExpiredSessions удаляет истёкшие сессии из обеих таблиц.
+// Вызывается часовым джанистором: строки с expires_at <= now() уже никем
+// не читаются (все проверки смотрят expires_at > now()), но копить их нельзя —
+// таблицы сессий растут неограниченно. Возвращает суммарное число удалённых строк.
+func (st *Store) PurgeExpiredSessions(ctx context.Context) (int64, error) {
+	var total int64
+	for _, table := range []string{"staff_sessions", "applicant_sessions"} {
+		res, err := st.DB.ExecContext(ctx,
+			`DELETE FROM `+table+` WHERE expires_at <= now()`)
+		if err != nil {
+			return total, err
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
 // AutoCloseNoResponse закрывает без ответа обращения, где заявитель не возвращался
 // дольше no_response_days (ТЗ 5.1: «заявитель не вернулся N дней — система»).
 // Активность заявителя = последнее его сообщение в чате; если сообщений не было —
