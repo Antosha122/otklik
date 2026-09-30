@@ -1,9 +1,9 @@
 //go:build integration
 
 // Интеграционные сценарии против чистой PostgreSQL-базы otklik_it_test.
-// Запуск: go test -tags integration ./tests
+// Запуск: go test -tags integration ./internal/httpapi
 // URL базы переопределяется переменной OTKLIK_IT_DATABASE_URL.
-package tests
+package httpapi_test
 
 import (
 	"bytes"
@@ -40,7 +40,8 @@ func itDatabaseURL() string {
 	if u := os.Getenv("OTKLIK_IT_DATABASE_URL"); u != "" {
 		return u
 	}
-	return "postgres://otklik:otklik@localhost:5432/otklik_it_test?sslmode=disable"
+	// compose публикует БД наружу контейнера только на 127.0.0.1:5433.
+	return "postgres://otklik:otklik@localhost:5433/otklik_it_test?sslmode=disable"
 }
 
 // itSetup один раз за прогон пересоздаёт схему, накатывает миграции и сид.
@@ -64,8 +65,56 @@ func itSetup(t *testing.T) *sql.DB {
 	if err := db.Seed(ctx, d, itSeedPwd); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	// Миграция 007 помечает демо-учётки must_change_password=true —
+	// для большинства сценариев флаг снимаем; отдельный тест проверяет его.
+	if _, err := d.ExecContext(ctx, `UPDATE users SET must_change_password = false`); err != nil {
+		t.Fatalf("reset must_change_password: %v", err)
+	}
 	itDB = d
 	return d
+}
+
+// Демо-пароль: пока must_change_password=true, API сотрудника закрыт (403),
+// кроме POST /api/auth/password; смена пароля открывает доступ обратно.
+func TestIT_MustChangePassword(t *testing.T) {
+	e := newIT(t)
+	if _, err := e.st.DB.ExecContext(context.Background(),
+		`UPDATE users SET must_change_password = true WHERE login = 'operator'`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := e.do(e.staff, "POST", "/api/auth/login", "", nil,
+		map[string]string{"login": "operator", "password": itSeedPwd})
+	if w.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"must_change_password":true`) {
+		t.Errorf("логин должен сообщать о необходимости смены пароля: %s", w.Body.String())
+	}
+	tok := e.staffTokenOf(w)
+
+	w = e.do(e.staff, "GET", "/api/operator/queue", tok, nil, nil)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "password change required") {
+		t.Errorf("до смены пароля API должен быть закрыт: %d %s", w.Code, w.Body.String())
+	}
+
+	w = e.do(e.staff, "POST", "/api/auth/password", tok, nil,
+		map[string]string{"current_password": itSeedPwd, "new_password": "new-strong-pwd-42"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("change password: %d %s", w.Code, w.Body.String())
+	}
+
+	w = e.do(e.staff, "GET", "/api/operator/queue", tok, nil, nil)
+	if w.Code != http.StatusOK {
+		t.Errorf("после смены пароля API должен открыться: %d %s", w.Code, w.Body.String())
+	}
+
+	// Возвращаем исходный пароль: последующие тесты логинятся оператором с itSeedPwd.
+	w = e.do(e.staff, "POST", "/api/auth/password", tok, nil,
+		map[string]string{"current_password": "new-strong-pwd-42", "new_password": itSeedPwd})
+	if w.Code != http.StatusOK {
+		t.Fatalf("restore password: %d %s", w.Code, w.Body.String())
+	}
 }
 
 // itEnv — изолированные HTTP-инстансы (свежие rate-limiter'ы) поверх общей БД.
@@ -92,7 +141,12 @@ func newIT(t *testing.T) *itEnv {
 	}
 }
 
-func (e *itEnv) do(h http.Handler, method, path, bearer string, cookie *http.Cookie, body any) *httptest.ResponseRecorder {
+// staffCookieName — имя HttpOnly-куки сессии сотрудника (токен в теле логина не выдаётся).
+const staffCookieName = "otklik_staff"
+
+// do отправляет запрос. staffTok — значение куки сессии сотрудника;
+// cookie — произвольная кука (используется для сессии заявителя).
+func (e *itEnv) do(h http.Handler, method, path, staffTok string, cookie *http.Cookie, body any) *httptest.ResponseRecorder {
 	e.t.Helper()
 	var rd *bytes.Reader
 	if body != nil {
@@ -108,8 +162,8 @@ func (e *itEnv) do(h http.Handler, method, path, bearer string, cookie *http.Coo
 	if body != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
-	if bearer != "" {
-		r.Header.Set("Authorization", "Bearer "+bearer)
+	if staffTok != "" {
+		r.AddCookie(&http.Cookie{Name: staffCookieName, Value: staffTok})
 	}
 	if cookie != nil {
 		r.AddCookie(cookie)
@@ -119,9 +173,9 @@ func (e *itEnv) do(h http.Handler, method, path, bearer string, cookie *http.Coo
 	return w
 }
 
-func (e *itEnv) mustDo(h http.Handler, method, path, bearer string, cookie *http.Cookie, body any, wantCode int) *httptest.ResponseRecorder {
+func (e *itEnv) mustDo(h http.Handler, method, path, staffTok string, cookie *http.Cookie, body any, wantCode int) *httptest.ResponseRecorder {
 	e.t.Helper()
-	w := e.do(h, method, path, bearer, cookie, body)
+	w := e.do(h, method, path, staffTok, cookie, body)
 	if w.Code != wantCode {
 		e.t.Fatalf("%s %s: код = %d, want %d, тело: %s", method, path, w.Code, wantCode, w.Body.String())
 	}
@@ -133,9 +187,9 @@ func (e *itEnv) login(login string) string {
 	w := e.mustDo(e.staff, "POST", "/api/auth/login", "", nil,
 		map[string]string{"login": login, "password": itSeedPwd}, http.StatusOK)
 
-	// Кука сессии сотрудника: HttpOnly, SameSite=Lax, Path=/, срок = SessionTTL.
+	// Токен сессии сотрудника живёт только в HttpOnly-куке.
 	for _, c := range w.Result().Cookies() {
-		if c.Name == "otklik_staff" {
+		if c.Name == staffCookieName {
 			if !c.HttpOnly {
 				e.t.Error("кука сессии сотрудника должна быть HttpOnly")
 			}
@@ -147,19 +201,24 @@ func (e *itEnv) login(login string) string {
 			}
 		}
 	}
-
-	var out struct {
-		SessionToken string `json:"session_token"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		e.t.Fatal(err)
-	}
-	if out.SessionToken == "" {
-		e.t.Fatal("session_token пуст")
-	}
-	return out.SessionToken
+	return e.staffTokenOf(w)
 }
 
+// staffTokenOf достаёт из ответа значение куки сессии сотрудника
+// и заодно проверяет, что токен не утёк в тело ответа.
+func (e *itEnv) staffTokenOf(w *httptest.ResponseRecorder) string {
+	e.t.Helper()
+	if strings.Contains(w.Body.String(), "session_token") {
+		e.t.Errorf("тело логина не должно содержать session_token: %s", w.Body.String())
+	}
+	for _, c := range w.Result().Cookies() {
+		if c.Name == staffCookieName {
+			return c.Value
+		}
+	}
+	e.t.Fatal("кука сессии сотрудника не выдана")
+	return ""
+}
 
 // createAppeal создаёт анонимное обращение и возвращает (appealID, трек-номер).
 func (e *itEnv) createAppeal(desc string, crisisContact string) (string, string) {
@@ -415,6 +474,19 @@ func TestIT_CrisisFlow(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"crisis_detected":true`) {
 		t.Errorf("оператору не виден флаг кризиса: %s", w.Body.String())
 	}
+	// Кризисное обращение автоматически получает срочный приоритет.
+	if !strings.Contains(w.Body.String(), `"priority":"urgent"`) {
+		t.Errorf("у кризисного обращения должен быть срочный приоритет: %s", w.Body.String())
+	}
+	// И понижать его нельзя.
+	w = e.do(e.staff, "POST", "/api/appeals/"+appealID+"/priority", opTok, nil,
+		map[string]string{"priority": "normal", "reason": "понизим"})
+	if w.Code != http.StatusConflict {
+		t.Errorf("понижение приоритета кризисного обращения должно давать 409, получили %d", w.Code)
+	}
+
+	// Контакт при кризисе виден в карточке обращения оператору.
+	w = e.mustDo(e.staff, "GET", "/api/appeals/"+appealID+"/", opTok, nil, nil, http.StatusOK)
 	if !strings.Contains(w.Body.String(), "@tg: pupil_help") {
 		t.Errorf("оператору не виден контакт при кризисе: %s", w.Body.String())
 	}
@@ -613,7 +685,7 @@ func TestIT_AttachmentsE2E(t *testing.T) {
 	ac := e.applicantCookie(track)
 
 	jpegBytes := jpegWithExif(t)
-	upload := func(h http.Handler, path, bearer string, cookie *http.Cookie, content []byte, filename, contentType string) *httptest.ResponseRecorder {
+	upload := func(h http.Handler, path, staffTok string, cookie *http.Cookie, content []byte, filename, contentType string) *httptest.ResponseRecorder {
 		var buf bytes.Buffer
 		mw := multipart.NewWriter(&buf)
 		fw, _ := mw.CreateFormFile("file", filename)
@@ -621,8 +693,8 @@ func TestIT_AttachmentsE2E(t *testing.T) {
 		_ = mw.Close()
 		r := httptest.NewRequest("POST", path, &buf)
 		r.Header.Set("Content-Type", mw.FormDataContentType())
-		if bearer != "" {
-			r.Header.Set("Authorization", "Bearer "+bearer)
+		if staffTok != "" {
+			r.AddCookie(&http.Cookie{Name: staffCookieName, Value: staffTok})
 		}
 		if cookie != nil {
 			r.AddCookie(cookie)
@@ -753,13 +825,7 @@ func TestIT_ChangePassword(t *testing.T) {
 		e.t.Helper()
 		w := e.mustDo(e.staff, "POST", "/api/auth/login", "", nil,
 			map[string]string{"login": login, "password": pwd}, http.StatusOK)
-		var out struct {
-			SessionToken string `json:"session_token"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-			e.t.Fatal(err)
-		}
-		return out.SessionToken
+		return e.staffTokenOf(w)
 	}
 
 	// Без аутентификации эндпоинт закрыт.
@@ -792,3 +858,85 @@ func TestIT_ChangePassword(t *testing.T) {
 	loginAs("tmpuser1", "new-pass-456")
 }
 
+// Заметки — служебный инструмент эксперта: оператор не читает их даже по API
+// (раньше запрет был только на клиенте), эксперт видит свои заметки.
+func TestIT_NotesExpertOnly(t *testing.T) {
+	e := newIT(t)
+	appealID, _ := e.createAppeal("Просьба помочь с конфликтом в классе", "")
+	opTok, expTok := e.toAnswerReady(appealID)
+
+	// Эксперт оставляет заметку.
+	e.mustDo(e.staff, "POST", "/api/appeals/"+appealID+"/notes", expTok, nil,
+		map[string]string{"text": "Связаться с классным руководителем"}, http.StatusCreated)
+
+	// Оператор не читает и не пишет заметки.
+	w := e.do(e.staff, "GET", "/api/appeals/"+appealID+"/notes", opTok, nil, nil)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "expert only") {
+		t.Errorf("оператор не должен читать заметки: %d %s", w.Code, w.Body.String())
+	}
+	w = e.do(e.staff, "POST", "/api/appeals/"+appealID+"/notes", opTok, nil,
+		map[string]string{"text": "служебная заметка оператора"})
+	if w.Code != http.StatusForbidden {
+		t.Errorf("оператор не должен писать заметки: %d %s", w.Code, w.Body.String())
+	}
+
+	// Эксперт читает свои заметки.
+	w = e.mustDo(e.staff, "GET", "/api/appeals/"+appealID+"/notes", expTok, nil, nil, http.StatusOK)
+	if !strings.Contains(w.Body.String(), "классным руководителем") {
+		t.Errorf("эксперт должен видеть свои заметки: %s", w.Body.String())
+	}
+}
+
+// Джанистор раз в час подчищает истёкшие сессии обеих таблиц,
+// не задевая живые.
+func TestIT_PurgeExpiredSessions(t *testing.T) {
+	e := newIT(t)
+	ctx := context.Background()
+
+	// Живые сессии: сотрудник и заявитель.
+	opTok := e.login("operator")
+	appealID, track := e.createAppeal("Обращение с живой сессией заявителя", "")
+	appCookie := e.applicantCookie(track)
+
+	// Истёкшие строки — вставляем напрямую.
+	if _, err := e.st.DB.ExecContext(ctx,
+		`INSERT INTO staff_sessions (token_hash, user_id, expires_at)
+		 VALUES ('expired-staff', (SELECT id FROM users WHERE login = 'operator'), now() - interval '1 minute')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.DB.ExecContext(ctx,
+		`INSERT INTO applicant_sessions (token_hash, appeal_id, expires_at)
+		 VALUES ('expired-applicant', $1, now() - interval '1 minute')`, appealID); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := e.st.PurgeExpiredSessions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 2 {
+		t.Errorf("удалено истёкших сессий = %d, want >= 2", n)
+	}
+
+	// Истёкшие строки исчезли, живые — на месте.
+	for _, q := range []string{
+		`SELECT count(*) FROM staff_sessions WHERE token_hash = 'expired-staff'`,
+		`SELECT count(*) FROM applicant_sessions WHERE token_hash = 'expired-applicant'`,
+	} {
+		var c int
+		if err := e.st.DB.QueryRowContext(ctx, q).Scan(&c); err != nil || c != 0 {
+			t.Errorf("истёкшая сессия не удалена: count=%d err=%v", c, err)
+		}
+	}
+
+	// Живая сессия сотрудника продолжает работать.
+	e.mustDo(e.staff, "GET", "/api/operator/queue", opTok, nil, nil, http.StatusOK)
+	// И живая сессия заявителя.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/appeals/me/", nil)
+	r.AddCookie(appCookie)
+	e.pub.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Errorf("живая сессия заявителя повреждена: %d %s", w.Code, w.Body.String())
+	}
+}
