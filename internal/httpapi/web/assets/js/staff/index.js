@@ -2,7 +2,7 @@ import { $ } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { ruRole } from '../core/i18n.js';
 import { loadCategories } from '../categories.js';
-import { initStaffAuth } from './auth.js';
+import { initStaffAuth, promptPasswordChange } from './auth.js';
 import { loadQueue, loadOpAll, loadExpert, bindListFilters, loadMyStats, loadOpComplaints } from './lists.js';
 import { openDetailFromURL } from './detail.js';
 import { loadAdminAppeals, loadAdminUsers, loadAdminCats, loadStats, loadAdminSettings, loadComplaints } from './admin.js';
@@ -30,9 +30,14 @@ async function fetchMe() {
 }
 
 // Гард страницы: без сессии — на вход, с чужой ролью — на свою домашнюю страницу.
+// С несменённым демо-паролем — на /login, там же предлагается смена.
 async function guardPage(roles) {
   const me = await fetchMe();
   if (!me) {
+    location.replace('/login');
+    return null;
+  }
+  if (me.must_change_password) {
     location.replace('/login');
     return null;
   }
@@ -46,10 +51,16 @@ async function guardPage(roles) {
   return me;
 }
 
-// Страница /login (и /): при живой сессии сразу уводит на панель по роли.
+// Страница /login (и /): при живой сессии сразу уводит на панель по роли;
+// если демо-пароль ещё не сменён — сначала требует смену.
 export async function loginInit() {
   bindAuthHooks();
   const me = await fetchMe();
+  if (me && me.must_change_password) {
+    staffState.me = me;
+    const changed = await promptPasswordChange(null);
+    if (!changed) return;
+  }
   if (me) location.replace(roleHome(me.role));
 }
 
