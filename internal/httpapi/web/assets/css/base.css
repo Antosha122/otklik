@@ -1,20 +1,48 @@
-/* Дизайн-токены, сброс, типографика и формы.
-   Остальные слои: components.css (виджеты), layout.css (каркас), responsive.css. */
+/* Отклик — дизайн-токены, сброс, типографика и формы.
+   Слои: components.css (виджеты), layout.css (каркас), responsive.css. */
+
 :root {
-  --bg: #f3f4f6;
+  --bg: #eef1f6;
+  --glow-a: rgba(99, 102, 241, .10);
+  --glow-b: rgba(45, 212, 191, .12);
   --card: #fff;
-  --ink: #1e2430;
-  --mut: #6b7280;
-  --acc: #2563eb;
-  --ok: #16a34a;
-  --bad: #dc2626;
-  --line: #e5e7eb;
-  --radius: 14px;
+  --ink: #1b2434;
+  --mut: #67748b;
+  --acc: #4f63e6;
+  --acc-2: #7285ff;
+  --acc-soft: rgba(79, 99, 230, .10);
+  --ok: #1e9e6a;
+  --ok-2: #3cc491;
+  --bad: #e5484d;
+  --bad-2: #f0777c;
+  --line: #e4e9f1;
+  --line-2: #ccd6e4;
+  --radius: 18px;
+  --radius-s: 12px;
+  --sh-sm: 0 1px 2px rgba(23, 32, 54, .05), 0 2px 10px rgba(23, 32, 54, .06);
+  --sh-md: 0 4px 16px rgba(23, 32, 54, .08), 0 14px 36px rgba(23, 32, 54, .08);
+  --sh-acc: 0 6px 20px rgba(79, 99, 230, .25);
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
-/* Глобальный border-box: без него поля форм с width:100% + padding
-   выходят за границы родительского блока. */
+/* Тон интерфейса зависит от портала и роли: заявителю — мягкий
+   шалфейно-бирюзовый, панелям сотрудников — собственные акценты. */
+body.applicant-mode {
+  --acc: #0f9c8c;
+  --acc-2: #2cb5a2;
+  --acc-soft: rgba(15, 156, 140, .10);
+  --sh-acc: 0 6px 20px rgba(15, 156, 140, .22);
+  --bg: #edf4f1;
+  --glow-a: rgba(32, 184, 166, .13);
+  --glow-b: rgba(250, 204, 137, .18);
+}
+
+body[data-page="login"]    { --acc: #5b6ef5; --acc-2: #8291ff; --acc-soft: rgba(91, 110, 245, .10); --sh-acc: 0 6px 20px rgba(91, 110, 245, .24); }
+body[data-page="operator"] { --acc: #4f63e6; --acc-2: #7285ff; --acc-soft: rgba(79, 99, 230, .10); --sh-acc: 0 6px 20px rgba(79, 99, 230, .25); }
+body[data-page="expert"]   { --acc: #0d9488; --acc-2: #29b1a3; --acc-soft: rgba(13, 148, 136, .10); --sh-acc: 0 6px 20px rgba(13, 148, 136, .24); }
+body[data-page="admin"]    { --acc: #7a5af8; --acc-2: #9d86ff; --acc-soft: rgba(122, 90, 248, .10); --sh-acc: 0 6px 20px rgba(122, 90, 248, .24); }
+body[data-page="detail"]   { --acc: #4a6cf0; --acc-2: #7288ff; --acc-soft: rgba(74, 108, 240, .10); --sh-acc: 0 6px 20px rgba(74, 108, 240, .24); }
+
 *,
 *::before,
 *::after {
@@ -27,17 +55,41 @@ html {
 
 body {
   margin: 0;
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   color: var(--ink);
+  background:
+    radial-gradient(1100px 520px at 88% -12%, var(--glow-a), transparent 60%),
+    radial-gradient(900px 480px at -12% -4%, var(--glow-b), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+h1, h2, h3 {
+  line-height: 1.3;
+  letter-spacing: -.01em;
+}
+
+::selection {
+  background: var(--acc-soft);
+}
+
+/* Тонкий аккуратный скролл в чатах и списках. */
+.msgs::-webkit-scrollbar { width: 8px; }
+.msgs::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; }
+
+:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 label {
   display: block;
-  font-size: 13.5px;
-  color: var(--mut);
-  margin: 12px 0 5px;
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--mut);
+  margin: 14px 0 6px;
 }
 
 select,
@@ -50,25 +102,41 @@ input[type=tel],
 input[type=url],
 textarea {
   width: 100%;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-s);
   font: inherit;
   font-size: 16px;
-  background: #fff;
   color: var(--ink);
+  background: #f8fafc;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+select:hover,
+input:hover,
+textarea:hover {
+  border-color: var(--line-2);
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  background: #fff;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 4px var(--acc-soft);
 }
 
 textarea {
   resize: vertical;
-  min-height: 88px;
+  min-height: 96px;
 }
 
 .chk {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 12px 0;
+  margin: 14px 0;
   font-size: 15px;
   color: var(--ink);
   font-weight: 400;
@@ -89,4 +157,23 @@ textarea {
 
 .hidden {
   display: none !important;
+}
+
+/* Мягкое появление блоков; уважаем prefers-reduced-motion. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+main > * {
+  animation: rise .5s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
