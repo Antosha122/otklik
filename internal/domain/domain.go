@@ -108,6 +108,9 @@ type Principal struct {
 	UserID   uuid.UUID
 	Login    string
 	AppealID uuid.UUID
+	// MustChangePassword — у сотрудника ещё не сменён демо-пароль:
+	// API закрыт, кроме смены пароля и логаута.
+	MustChangePassword bool
 }
 
 func (p Principal) IsStaff() bool {
