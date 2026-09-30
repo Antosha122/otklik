@@ -1,4 +1,4 @@
-package tests
+package httpapi_test
 
 import (
 	"encoding/json"
@@ -277,4 +277,3 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Errorf("COOKIE_SECURE: Strict-Transport-Security = %q, want max-age...", v)
 	}
 }
-
