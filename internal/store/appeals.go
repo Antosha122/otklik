@@ -111,8 +111,10 @@ func (st *Store) CreateAppeal(ctx context.Context, p CreateAppealParams) (Appeal
 	var id uuid.UUID
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO appeals (track_hash, applicant_type, category_id, free_text_mode,
-			description, crisis_detected, idempotency_key)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
+			description, priority, crisis_detected, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5,
+			CASE WHEN $6 THEN 'urgent' ELSE 'normal' END,
+			$6, NULLIF($7, ''))
 		RETURNING id`,
 		p.TrackHash, p.ApplicantType, p.CategoryID, p.FreeTextMode,
 		p.Description, p.CrisisDetected, p.IdempotencyKey).Scan(&id)
@@ -159,6 +161,7 @@ func (st *Store) AppendDescription(ctx context.Context, appealID uuid.UUID,
 		UPDATE appeals
 		SET description = description || E'\n\n— Дополнение (`+tag+`):\n' || $2,
 		    crisis_detected = crisis_detected OR $3,
+		    priority = CASE WHEN (crisis_detected OR $3) THEN 'urgent' ELSE priority END,
 		    updated_at = now()
 		WHERE id = $1 AND status NOT IN ('completed','rejected','closed_no_response')
 		RETURNING id`, appealID, addition, crisisHit).Scan(&id)
