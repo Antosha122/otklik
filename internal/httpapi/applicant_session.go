@@ -34,7 +34,7 @@ type applicantAppealResp struct {
 func (s *Server) writeApplicantView(w http.ResponseWriter, r *http.Request, appealID uuid.UUID) {
 	a, err := s.st.GetAppealByID(r.Context(), appealID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	answers, _ := s.st.ListIntakeAnswers(r.Context(), appealID)
@@ -70,7 +70,7 @@ func (s *Server) handleApplicantMessages(w http.ResponseWriter, r *http.Request)
 	p, _ := principalFrom(r.Context())
 	msgs, err := s.st.ListMessages(r.Context(), p.AppealID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
@@ -88,7 +88,7 @@ func (s *Server) handleApplicantPostMessage(w http.ResponseWriter, r *http.Reque
 	}
 	a, err := s.st.GetAppealByID(r.Context(), p.AppealID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if a.Status.Terminal() {
@@ -101,7 +101,7 @@ func (s *Server) handleApplicantPostMessage(w http.ResponseWriter, r *http.Reque
 		if _, err := s.st.TransitionStatus(r.Context(), p.AppealID, nil, domain.RoleApplicant,
 			domain.StatusNeedsClarification, domain.StatusInProgress, "applicant_responded"); err != nil &&
 			!errors.Is(err, domain.ErrConflict) {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
@@ -111,7 +111,7 @@ func (s *Server) handleApplicantPostMessage(w http.ResponseWriter, r *http.Reque
 	}
 	msg, err := s.st.CreateMessage(r.Context(), p.AppealID, "applicant", nil, req.Text, "")
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	resp := map[string]any{"message": msg}
@@ -119,7 +119,7 @@ func (s *Server) handleApplicantPostMessage(w http.ResponseWriter, r *http.Reque
 	// Если кризис проявился уже в чате — помечаем и сразу показываем помощь.
 	if !a.CrisisDetected && domain.DetectCrisis(strings.TrimSpace(req.Text)) {
 		if err := s.st.FlagCrisisFromMessage(r.Context(), p.AppealID); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		resp["crisis_detected"] = true
@@ -149,7 +149,7 @@ func (s *Server) handleApplicantAppend(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.AppendDescription(r.Context(), p.AppealID, text, domain.DetectCrisis(text))
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	// Дополнение — тоже ответ заявителя: снимаем ожидание уточнения.
@@ -157,7 +157,7 @@ func (s *Server) handleApplicantAppend(w http.ResponseWriter, r *http.Request) {
 		a2, err := s.st.TransitionStatus(r.Context(), p.AppealID, nil, domain.RoleApplicant,
 			domain.StatusNeedsClarification, domain.StatusInProgress, "applicant_responded")
 		if err != nil && !errors.Is(err, domain.ErrConflict) {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		if err == nil {
@@ -189,7 +189,7 @@ func (s *Server) handleApplicantResult(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.ApplicantResult(r.Context(), p.AppealID, req.Helped, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -218,7 +218,7 @@ func (s *Server) handleApplicantFeedback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.st.UpsertFeedback(r.Context(), p.AppealID, req.Rating, req.Comment); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
@@ -239,7 +239,7 @@ func (s *Server) handleApplicantComplaint(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.st.CreateComplaint(r.Context(), p.AppealID, req.Text); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "accepted"})

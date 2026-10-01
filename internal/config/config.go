@@ -14,6 +14,8 @@ type Config struct {
 	CookieSecure    bool
 	SessionTTL      time.Duration
 	SeedDefaultPwd  string
+	LogFormat       string // json (по умолчанию, для прода) или text (локальная разработка)
+	RetentionDays   int    // срок хранения терминальных обращений; 0 — хранить бессрочно
 }
 
 func env(key, def string) string {
@@ -34,6 +36,12 @@ func Load() Config {
 			ttl = time.Duration(n) * time.Minute
 		}
 	}
+	retention := 0
+	if v := os.Getenv("RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			retention = n
+		}
+	}
 	return Config{
 		ListenAddr:      env("LISTEN_ADDR", ":8080"),
 		StaffListenAddr: env("STAFF_LISTEN_ADDR", ":8081"),
@@ -42,5 +50,7 @@ func Load() Config {
 		CookieSecure:    secure,
 		SessionTTL:      ttl,
 		SeedDefaultPwd:  env("SEED_DEFAULT_PWD", "otklik-demo-2026"),
+		LogFormat:       env("LOG_FORMAT", "json"),
+		RetentionDays:   retention,
 	}
 }

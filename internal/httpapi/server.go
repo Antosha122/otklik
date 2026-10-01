@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -105,9 +105,68 @@ func sameHost(a, b string) bool {
 	return norm(a) == norm(b)
 }
 
+// statusWriter запоминает код ответа и размер для access-лога.
+// Flush проксируется: SSE-поток присутствия требует явного сброса буфера.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	if sw.status == 0 {
+		sw.status = code
+	}
+	sw.ResponseWriter.WriteHeader(code)
+}
+
+func (sw *statusWriter) Write(b []byte) (int, error) {
+	if sw.status == 0 {
+		sw.status = http.StatusOK
+	}
+	n, err := sw.ResponseWriter.Write(b)
+	sw.bytes += n
+	return n, err
+}
+
+func (sw *statusWriter) Flush() {
+	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// accessLog — единая точка наблюдаемости: request_id сквозной (заголовок
+// X-Request-ID возвращается клиенту и попадает в лог), плюс метод, путь,
+// код, размер и длительность. 5xx дополнительно видны в error-логе writeErr
+// с тем же request_id.
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		reqID := middleware.GetReqID(r.Context())
+		sw := &statusWriter{ResponseWriter: w}
+		if reqID != "" {
+			sw.Header().Set("X-Request-ID", reqID)
+		}
+		next.ServeHTTP(sw, r)
+		if sw.status == 0 {
+			sw.status = http.StatusOK
+		}
+		slog.Info("http_request",
+			"request_id", reqID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", sw.status,
+			"bytes", sw.bytes,
+			"duration_ms", float64(time.Since(start).Microseconds())/1000.0,
+			"remote", clientIP(r),
+		)
+	})
+}
+
 func baseRouter(cfg config.Config) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(accessLog)
 	// RealIP сознательно не включаем: он слепо верит X-Forwarded-For, а тот
 	// подделывается клиентом. Адрес для рейт-лимитов считает clientIP —
 	// с доверием только приватным прокси (Caddy в docker-сети).
@@ -480,7 +539,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeErr(w http.ResponseWriter, err error) {
+func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrUnauthorized):
 		writeJSON(w, http.StatusUnauthorized, errorResp{err.Error()})
@@ -498,7 +557,9 @@ func writeErr(w http.ResponseWriter, err error) {
 		// ТЗ 5.1: лимит возвратов исчерпан — текст для заявителя.
 		writeJSON(w, http.StatusConflict, errorResp{"достигнут лимит возвратов: обращение можно завершить, оценить работу или отправить жалобу"})
 	default:
-		log.Printf("httpapi: internal error: %v", err)
+		slog.Error("httpapi: internal error",
+			"request_id", middleware.GetReqID(r.Context()),
+			"error", err.Error())
 		writeJSON(w, http.StatusInternalServerError, errorResp{"internal error"})
 	}
 }

@@ -198,7 +198,7 @@ func (s *Server) handleStaffGetAppeal(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.loadAppealWithAccess(r, id, p)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -207,7 +207,7 @@ func (s *Server) handleStaffGetAppeal(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOperatorQueue(w http.ResponseWriter, r *http.Request) {
 	items, err := s.st.ListOperatorQueue(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
@@ -217,7 +217,7 @@ func (s *Server) handleOperatorAppeals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	items, err := s.st.ListOperatorAppeals(r.Context(), q.Get("status"))
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
@@ -229,7 +229,7 @@ func (s *Server) handleExpertAppeals(w http.ResponseWriter, r *http.Request) {
 	items, err := s.st.ListExpertAppeals(r.Context(), p.UserID,
 		q.Get("status"), q.Get("category"), q.Get("priority"))
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})

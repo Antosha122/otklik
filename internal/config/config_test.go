@@ -9,7 +9,8 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	for _, k := range []string{"LISTEN_ADDR", "STAFF_LISTEN_ADDR", "DATABASE_URL",
-		"ATTACHMENTS_DIR", "COOKIE_SECURE", "SESSION_TTL_MIN", "SEED_DEFAULT_PWD"} {
+		"ATTACHMENTS_DIR", "COOKIE_SECURE", "SESSION_TTL_MIN", "SEED_DEFAULT_PWD",
+		"LOG_FORMAT", "RETENTION_DAYS"} {
 		t.Setenv(k, "")
 	}
 	cfg := config.Load()

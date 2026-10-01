@@ -15,7 +15,7 @@ func (s *Server) requireResponsible(w http.ResponseWriter, r *http.Request, id u
 	}
 	ok, err := s.st.IsResponsible(r.Context(), id, p.UserID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return false
 	}
 	if !ok {
@@ -37,7 +37,7 @@ func (s *Server) handleTakeInProgress(w http.ResponseWriter, r *http.Request) {
 	a, err := s.st.TransitionStatus(r.Context(), id, actorPtr(p), p.Role,
 		domain.StatusAssigned, domain.StatusInProgress, "taken_by_expert")
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -55,7 +55,7 @@ func (s *Server) handleClarify(w http.ResponseWriter, r *http.Request) {
 	a, err := s.st.TransitionStatus(r.Context(), id, actorPtr(p), p.Role,
 		domain.StatusInProgress, domain.StatusNeedsClarification, "clarification_requested")
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -80,7 +80,7 @@ func (s *Server) handlePublishRecommendation(w http.ResponseWriter, r *http.Requ
 	}
 	a, err := s.st.PublishRecommendation(r.Context(), id, actorPtr(p), p.Role, req.Recommendation)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -105,7 +105,7 @@ func (s *Server) handleRequestTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.RequestTransfer(r.Context(), id, actorPtr(p), p.Role, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -123,7 +123,7 @@ func (s *Server) handleCloseNoResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.GetAppealByID(r.Context(), id)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if a.Status != domain.StatusNeedsClarification && a.Status != domain.StatusAnswerReady {
@@ -133,7 +133,7 @@ func (s *Server) handleCloseNoResponse(w http.ResponseWriter, r *http.Request) {
 	a, err = s.st.TransitionStatus(r.Context(), id, actorPtr(p), p.Role,
 		a.Status, domain.StatusClosedNoResponse, "no_applicant_response")
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -172,7 +172,7 @@ func (s *Server) handleAddContributor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.st.AddContributor(r.Context(), id, expertID, actorPtr(p), p.Role); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "contributor added"})

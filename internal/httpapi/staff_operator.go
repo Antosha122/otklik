@@ -37,7 +37,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.AssignExpert(r.Context(), id, expertID, actorPtr(p), p.Role, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -67,7 +67,7 @@ func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.Reject(r.Context(), id, actorPtr(p), p.Role, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -97,7 +97,7 @@ func (s *Server) handleCompleteByOperator(w http.ResponseWriter, r *http.Request
 	}
 	a, err := s.st.CompleteByOperator(r.Context(), id, actorPtr(p), p.Role, req.Recommendation)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -129,7 +129,7 @@ func (s *Server) handleSetPriority(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.SetPriority(r.Context(), id, actorPtr(p), p.Role, pr, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -155,7 +155,7 @@ func (s *Server) handleReturnForRework(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.ReturnForRework(r.Context(), id, actorPtr(p), p.Role, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -191,7 +191,7 @@ func (s *Server) handleSetCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.SetCategory(r.Context(), id, actorPtr(p), p.Role, catID, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))

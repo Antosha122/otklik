@@ -21,17 +21,17 @@ type expertWithLoad struct {
 func (s *Server) handleListExperts(w http.ResponseWriter, r *http.Request) {
 	users, err := s.st.ListUsers(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	set, err := s.st.GetSettings(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	load, err := s.st.ExpertLoad(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	experts := make([]expertWithLoad, 0, len(users))
@@ -49,7 +49,7 @@ func (s *Server) handleListExperts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) {
 	set, err := s.st.GetSettings(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, set)
@@ -80,19 +80,19 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	}
 	if req.ExpertActiveLimit != nil {
 		if err := s.st.SetExpertActiveLimit(r.Context(), *req.ExpertActiveLimit); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
 	if req.MaxReturns != nil {
 		if err := s.st.SetMaxReturns(r.Context(), *req.MaxReturns); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
 	if req.NoResponseDays != nil {
 		if err := s.st.SetNoResponseDays(r.Context(), *req.NoResponseDays); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
@@ -102,7 +102,7 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleAdminAppeals(w http.ResponseWriter, r *http.Request) {
 	items, err := s.st.ListAppealsMeta(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
@@ -111,7 +111,7 @@ func (s *Server) handleAdminAppeals(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := s.st.ListUsers(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
@@ -154,12 +154,12 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	u, err := s.st.CreateUser(r.Context(), req.Login, string(hash), req.Role, req.SpecialistGroup)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, u)
@@ -183,19 +183,19 @@ func (s *Server) handleAdminPatchUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Active != nil {
 		if err := s.st.SetUserActive(r.Context(), userID, *req.Active); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
 	if req.Role != nil || req.SpecialistGroup != nil {
 		if err := s.st.UpdateUser(r.Context(), userID, req.Role, req.SpecialistGroup, nil); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 	}
 	u, err := s.st.GetUserByID(r.Context(), userID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
@@ -204,7 +204,7 @@ func (s *Server) handleAdminPatchUser(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminListCategories(w http.ResponseWriter, r *http.Request) {
 	cats, err := s.st.ListCategoriesAll(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"categories": cats})
@@ -234,7 +234,7 @@ func (s *Server) handleAdminCreateCategory(w http.ResponseWriter, r *http.Reques
 	}
 	c, err := s.st.CreateCategory(r.Context(), req.Name, req.SpecialistGroup, req.FreeForm)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, c)
@@ -257,12 +257,12 @@ func (s *Server) handleAdminPatchCategory(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.st.UpdateCategory(r.Context(), catID, req.Name, req.SpecialistGroup, req.Active); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	c, err := s.st.GetCategory(r.Context(), catID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
@@ -271,7 +271,7 @@ func (s *Server) handleAdminPatchCategory(w http.ResponseWriter, r *http.Request
 func (s *Server) handleAdminComplaints(w http.ResponseWriter, r *http.Request) {
 	complaints, err := s.st.ListComplaints(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"complaints": complaints})

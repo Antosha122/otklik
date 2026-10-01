@@ -45,7 +45,7 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 	}
 	a, err := s.loadAppealWithAccess(r, appealID, p)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if a.Status.Terminal() {
@@ -88,16 +88,16 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 	storageName := uuid.NewString() + ".bin"
 	dir := filepath.Join(s.cfg.AttachmentsDir, appealID.String())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if err := os.WriteFile(filepath.Join(dir, storageName), data, 0o644); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	att, err := s.st.CreateAttachment(r.Context(), appealID, storageName, detected, len(data))
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, att)
@@ -116,7 +116,7 @@ func (s *Server) handleDownloadAttachment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, appealID, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	att, err := s.st.GetAttachment(r.Context(), appealID, attID)
@@ -125,13 +125,13 @@ func (s *Server) handleDownloadAttachment(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusNotFound, errorResp{"not found"})
 			return
 		}
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	path := filepath.Join(s.cfg.AttachmentsDir, appealID.String(), att.StorageName)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", att.ContentType)

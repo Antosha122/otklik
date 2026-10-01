@@ -18,12 +18,12 @@ func (s *Server) handleStaffMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, id, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	msgs, err := s.st.ListMessages(r.Context(), id)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
@@ -41,7 +41,7 @@ func (s *Server) handleStaffPostMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	a, err := s.loadAppealWithAccess(r, id, p)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if a.Status.Terminal() {
@@ -62,7 +62,7 @@ func (s *Server) handleStaffPostMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	msg, err := s.st.CreateMessage(r.Context(), id, authorType, actorPtr(p), req.Text, "")
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
@@ -85,12 +85,12 @@ func (s *Server) handleStaffNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, id, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	notes, err := s.st.ListNotes(r.Context(), id)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"notes": notes})
@@ -107,7 +107,7 @@ func (s *Server) handleStaffPostNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, id, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	var req noteReq
@@ -120,7 +120,7 @@ func (s *Server) handleStaffPostNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note, err := s.st.CreateNote(r.Context(), id, p.UserID, req.Text)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, note)
@@ -138,7 +138,7 @@ func (s *Server) handleStaffEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	events, err := s.st.ListEvents(r.Context(), id)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})

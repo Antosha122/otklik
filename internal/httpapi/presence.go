@@ -79,7 +79,7 @@ func (s *Server) handlePresencePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, id, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	var req presenceReq
@@ -97,7 +97,7 @@ func (s *Server) handlePresenceGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.loadAppealWithAccess(r, id, p); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"present": s.presence.list(id, p.UserID)})

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,24 +18,37 @@ import (
 
 func main() {
 	cfg := config.Load()
+
+	// Структурные логи: в проде — JSON (собирается Docker'ом и парсится
+	// лог-коллектором), при LOG_FORMAT=text — читаемый человеко-понятный вид.
+	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, nil)
+	if cfg.LogFormat == "text" {
+		handler = slog.NewTextHandler(os.Stdout, nil)
+	}
+	slog.SetDefault(slog.New(handler))
+	fatal := func(msg string, args ...any) {
+		slog.Error(msg, args...)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := os.MkdirAll(cfg.AttachmentsDir, 0o755); err != nil {
-		log.Fatalf("attachments dir: %v", err)
+		fatal("attachments dir", "error", err)
 	}
 
 	d, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db: %v", err)
+		fatal("db open", "error", err)
 	}
 	defer d.Close()
 
 	if err := db.Migrate(ctx, d); err != nil {
-		log.Fatalf("migrate: %v", err)
+		fatal("migrate", "error", err)
 	}
 	if err := db.Seed(ctx, d, cfg.SeedDefaultPwd); err != nil {
-		log.Fatalf("seed: %v", err)
+		fatal("seed", "error", err)
 	}
 
 	st := store.New(d)
@@ -47,15 +60,15 @@ func main() {
 		run := func() {
 			n, err := st.AutoCloseNoResponse(ctx)
 			if err != nil {
-				log.Printf("janitor: auto-close: %v", err)
+				slog.Error("janitor: auto-close", "error", err)
 			} else if n > 0 {
-				log.Printf("janitor: closed %d appeal(s) without applicant response", n)
+				slog.Info("janitor: closed appeals without applicant response", "count", n)
 			}
 			purged, err := st.PurgeExpiredSessions(ctx)
 			if err != nil {
-				log.Printf("janitor: purge sessions: %v", err)
+				slog.Error("janitor: purge sessions", "error", err)
 			} else if purged > 0 {
-				log.Printf("janitor: purged %d expired session(s)", purged)
+				slog.Info("janitor: purged expired sessions", "count", purged)
 			}
 		}
 		run()
@@ -84,9 +97,9 @@ func main() {
 
 	run := func(name string, srv *http.Server) {
 		go func() {
-			log.Printf("otklik: %s listening on %s", name, srv.Addr)
+			slog.Info("otklik: listening", "port", name, "addr", srv.Addr)
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Fatalf("listen: %v", err)
+				fatal("listen", "error", err)
 			}
 		}()
 	}
@@ -94,13 +107,13 @@ func main() {
 	run("staff (сотрудники)", staffSrv)
 
 	<-ctx.Done()
-	log.Println("otklik: shutting down")
+	slog.Info("otklik: shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := publicSrv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		slog.Error("shutdown public", "error", err)
 	}
 	if err := staffSrv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		slog.Error("shutdown staff", "error", err)
 	}
 }

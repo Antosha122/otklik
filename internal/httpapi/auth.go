@@ -82,11 +82,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, tokenHash, err := newToken()
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if err := s.st.CreateStaffSession(r.Context(), tokenHash, u.ID, time.Now().Add(s.cfg.SessionTTL)); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	s.setCookie(w, staffCookie, token)
@@ -157,18 +157,18 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if err := s.st.UpdateUserPassword(r.Context(), p.UserID, string(newHash)); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 
 	// Смена пароля — повод выкинуть прочие сессии (другие вкладки/устройства).
 	currentHash := hashToken(staffSessionToken(r))
 	if err := s.st.DeleteStaffSessionsForUser(r.Context(), p.UserID, currentHash); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed"})

@@ -52,7 +52,7 @@ func (s *Server) handleAdminSetStatus(w http.ResponseWriter, r *http.Request) {
 	// а защита от гонок — повторная проверка внутри транзакции в сторе.
 	cur, err := s.st.GetAppealByID(r.Context(), id)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if cur.Status.Terminal() {
@@ -61,7 +61,7 @@ func (s *Server) handleAdminSetStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.st.AdminSetStatus(r.Context(), id, actorPtr(p), p.Role, to, req.Reason)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
@@ -110,7 +110,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.st.GetAdminStats(r.Context(), from, to)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -124,7 +124,7 @@ func (s *Server) handleMyStats(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.st.GetMyStats(r.Context(), p.Role, p.UserID)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -153,7 +153,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 	if p.Role == domain.RoleExpert {
 		items, err := s.st.ListExpertAppeals(r.Context(), p.UserID, "", "", "")
 		if err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		for _, it := range items {
@@ -166,7 +166,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 		// назначал специалиста или отклонял, — а не весь массив программы.
 		items, err := s.st.ListOperatorWorkedAppealsMeta(r.Context(), p.UserID)
 		if err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		for _, it := range items {
@@ -177,7 +177,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 	} else {
 		items, err := s.st.ListAppealsMeta(r.Context())
 		if err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		for _, it := range items {

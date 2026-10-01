@@ -12,7 +12,7 @@ import (
 func (s *Server) handlePublicCategories(w http.ResponseWriter, r *http.Request) {
 	cats, err := s.st.ListCategoriesPublic(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"categories": cats})
@@ -115,7 +115,7 @@ func (s *Server) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < 10; i++ {
 		tn, err := domain.GenerateTrackNumber()
 		if err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 			return
 		}
 		hash := domain.HashTrack(tn)
@@ -126,13 +126,13 @@ func (s *Server) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if trackNumber == "" {
-		writeErr(w, domain.ErrConflict)
+		writeErr(w, r, domain.ErrConflict)
 		return
 	}
 
 	appeal, err := s.st.CreateAppeal(r.Context(), params)
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	resp := appealCreatedResp{
@@ -181,11 +181,11 @@ func (s *Server) handleVerifyTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	token, tokenHash, err := newToken()
 	if err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	if err := s.st.CreateApplicantSession(r.Context(), tokenHash, appealID, time.Now().Add(s.cfg.SessionTTL)); err != nil {
-		writeErr(w, err)
+		writeErr(w, r, err)
 		return
 	}
 	s.rl.reset("track:" + ip)
