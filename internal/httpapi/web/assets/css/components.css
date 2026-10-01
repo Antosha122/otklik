@@ -586,7 +586,9 @@ pre.raw {
   width: auto;
   min-height: 46px;
   padding: 9px 12px;
-  font-size: 15px;
+  /* 16px — iOS Safari не автозумит страницу при фокусе (зум включается
+     на полях с меньшим кеглем и не всегда возвращается). */
+  font-size: 16px;
 }
 
 .filters select { min-width: 150px; }
@@ -858,7 +860,7 @@ pre.raw {
 
 .chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 12px;
   margin: 10px 0 16px;
 }
@@ -1047,4 +1049,6 @@ pre.raw {
 @media (max-width: 560px) {
   .wload .wload-l { min-width: 100%; }
   .legend { min-width: 130px; }
+  /* Сегмент периодов на узких экранах впритык — ужимаем отступы, */
+  .seg button { padding-left: 10px; padding-right: 10px; }
 }
