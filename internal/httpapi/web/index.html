@@ -11,11 +11,8 @@
 <link rel="stylesheet" href="/assets/css/layout.css">
 <link rel="stylesheet" href="/assets/css/responsive.css">
 </head>
-<body data-page="intro">
-<script>
-window.UI_MODE = "__OTKLIK_UI_MODE__" === "staff" ? "staff" : "applicant";
-document.body.classList.add(window.UI_MODE + "-mode");
-</script>
+<body data-page="intro" data-ui-mode="__OTKLIK_UI_MODE__">
+<script src="/assets/js/boot.js"></script>
 <header>
   <div class="top">
     <h1>Отклик</h1>
@@ -46,23 +43,7 @@ document.body.classList.add(window.UI_MODE + "-mode");
 </section>
 
 </main>
-<script>
-/* Лендинг заявителя (порт 8080): выбор «школьник / родитель-педагог»
-   запоминается в localStorage и сразу ведёт на форму обращения —
-   поле «Кто обращается» и тон «ты»/«вы» подставятся на /new.
-   Служебному порту (8081) выбор не нужен: там roleChoice скрыт
-   классом staff-mode. */
-(function () {
-  if (window.UI_MODE === 'staff') return;
-  document.querySelectorAll('#roleChoice [data-choice]').forEach(function (card) {
-    card.addEventListener('click', function () {
-      var role = card.getAttribute('data-choice');
-      try { localStorage.setItem('otklik_role', role); } catch (e) { /* приватный режим — форма всё равно откроется */ }
-      location.href = '/new';
-    });
-  });
-})();
-</script>
+<script src="/assets/js/applicant/intro-role.js"></script>
 <script type="module" src="/assets/js/main.js"></script>
 </body>
 </html>

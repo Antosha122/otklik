@@ -11,11 +11,8 @@
 <link rel="stylesheet" href="/assets/css/layout.css">
 <link rel="stylesheet" href="/assets/css/responsive.css">
 </head>
-<body data-page="login">
-<script>
-window.UI_MODE = "__OTKLIK_UI_MODE__" === "staff" ? "staff" : "applicant";
-document.body.classList.add(window.UI_MODE + "-mode");
-</script>
+<body data-page="login" data-ui-mode="__OTKLIK_UI_MODE__">
+<script src="/assets/js/boot.js"></script>
 <header>
   <div class="top">
     <h1>Отклик</h1>

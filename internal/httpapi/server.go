@@ -45,7 +45,7 @@ func securityHeaders(cfg config.Config) func(http.Handler) http.Handler {
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Referrer-Policy", "no-referrer")
 			h.Set("Content-Security-Policy",
-				"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
+				"default-src 'self'; script-src 'self'; "+
 					"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "+
 					"connect-src 'self'; object-src 'none'; base-uri 'self'; "+
 					"form-action 'self'; frame-ancestors 'none'")
@@ -60,7 +60,7 @@ func securityHeaders(cfg config.Config) func(http.Handler) http.Handler {
 // sameOrigin — защита от CSRF для cookie-аутентификации. Браузер на
 // cross-site запросе обязан прислать Origin (или Referer): сверяем его хост
 // с хостом запроса. Запросы без Origin (curl, мониторинг, тесты) проходят —
-// HttpOnly-кука всё равно не покидает сайт, аbearer-токенов больше нет.
+// HttpOnly-кука всё равно не покидает сайт, а bearer-токенов больше нет.
 func sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
