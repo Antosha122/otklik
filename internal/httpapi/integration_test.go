@@ -171,7 +171,10 @@ func newIT(t *testing.T) *itEnv {
 	d := itSetup(t)
 	st := store.New(d)
 	cfg := config.Config{
-		SessionTTL:     time.Hour,
+		SessionTTL: time.Hour,
+		// 2FA в интеграционных тестах включена: сценарий TestIT_TOTP
+		// проверяет полный цикл setup→enable→login.
+		TotpEnabled: true,
 		AttachmentsDir: t.TempDir(),
 		// Демо-пароль сервера совпадает с сид-паролём: тест обязательной смены
 		// и сверка флага с фактом работают на тех же данных.

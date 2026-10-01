@@ -104,6 +104,9 @@ export async function loadTotp() {
   if (!el) return;
   try {
     const st = await api('GET', '/api/auth/totp');
+    // 2FA отключена на сервере (TOTP_ENABLED!=1) — весь блок скрываем.
+    if (st.available === false) { $('prTotpCard').classList.add('hidden'); return; }
+    $('prTotpCard').classList.remove('hidden');
     // 2FA включена — незавершённая настройка больше неактуальна.
     if (st.enabled) totpSetupSecret = '';
     if (st.enabled) {

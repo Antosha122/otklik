@@ -21,6 +21,14 @@ import (
 //     401 totp_required, фронт показывает поле);
 //  4. POST /api/auth/totp/disable {password} — выключение (потеряли телефон —
 //     отключает администратор БД, см. README).
+//
+// Возможность управляется флагом TOTP_ENABLED (по умолчанию выключена):
+// логин не требует код даже при включённой 2FA в БД, setup/enable отвечают
+// 503, а блок в /profile скрывается. Отключить уже включённую 2FA можно
+// всегда — чтобы не остаться запертым при выключенном флаге.
+
+// totpAvailable — включена ли поддержка 2FA на этом сервере (TOTP_ENABLED=1).
+func (s *Server) totpAvailable() bool { return s.cfg.TotpEnabled }
 
 func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
@@ -29,10 +37,23 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "available": s.totpAvailable()})
+}
+
+// totpDisabledResp — единый ответ для setup/enable при выключенной фиче.
+func (s *Server) totpDisabledResp(w http.ResponseWriter, r *http.Request) bool {
+	if s.totpAvailable() {
+		return false
+	}
+	writeJSON(w, http.StatusServiceUnavailable,
+		errorResp{"2FA is disabled on this server (set TOTP_ENABLED=1)"})
+	return true
 }
 
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
+	if s.totpDisabledResp(w, r) {
+		return
+	}
 	p, _ := principalFrom(r.Context())
 	if _, enabled, err := s.st.GetTOTPSecret(r.Context(), p.UserID); err != nil {
 		writeErr(w, r, err)
@@ -63,6 +84,9 @@ type totpCodeReq struct {
 }
 
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
+	if s.totpDisabledResp(w, r) {
+		return
+	}
 	p, _ := principalFrom(r.Context())
 	var req totpCodeReq
 	if !decodeJSON(w, r, &req) {
@@ -133,6 +157,11 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 // Возвращает true, если логин можно продолжать. Ответ (401 + totp_required)
 // уже написан в w при ошибке.
 func (s *Server) checkTOTPAtLogin(w http.ResponseWriter, r *http.Request, userID uuid.UUID, login, code string) bool {
+	// Фича выключена (TOTP_ENABLED!=1) — второй фактор не запрашиваем,
+	// даже если у пользователя осталась включённая 2FA в базе.
+	if !s.totpAvailable() {
+		return true
+	}
 	secret, enabled, err := s.st.GetTOTPSecret(r.Context(), userID)
 	if err != nil {
 		writeErr(w, r, err)

@@ -19,6 +19,7 @@ const SERVER_ERRORS_RU = {
   'totp code required': 'Введите код двухфакторной аутентификации',
   'invalid totp code': 'Неверный код двухфакторной аутентификации',
   'totp is already enabled: disable it first': 'Двухфакторная аутентификация уже включена — сначала отключите её',
+  '2FA is disabled on this server (set TOTP_ENABLED=1)': 'Двухфакторная аутентификация отключена на этом сервере',
   'run totp setup first': 'Сначала запустите настройку 2FA и добавьте секрет в приложение',
   'invalid password': 'Неверный пароль',
 

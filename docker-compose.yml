@@ -38,6 +38,9 @@ services:
       RETENTION_DAYS: "${RETENTION_DAYS:-730}"
       # Формат логов: json — для прода (собирает Docker), text — локальная отладка.
       LOG_FORMAT: "${LOG_FORMAT:-json}"
+      # 2FA (TOTP) для сотрудников: 0 — выключена (по умолчанию, вход только по
+      # паролю), в проде рекомендуется 1 — настройка в личном кабинете /profile.
+      TOTP_ENABLED: "${TOTP_ENABLED:-0}"
     ports:
       # Прямой доступ только с localhost; наружу всё идёт через caddy (TLS).
       - "127.0.0.1:8080:8080"

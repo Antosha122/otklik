@@ -21,6 +21,9 @@ type Config struct {
 	SeedPwdGenerated bool
 	LogFormat        string // json (по умолчанию, для прода) или text (локальная разработка)
 	RetentionDays    int    // срок хранения терминальных обращений; 0 — хранить бессрочно
+	// TotpEnabled: 2FA (TOTP) для сотрудников. По умолчанию выключена — на демо-стенде
+	// она мешает (код нужен при каждом входе); в проде включается TOTP_ENABLED=1.
+	TotpEnabled bool
 }
 
 func env(key, def string) string {
@@ -58,6 +61,10 @@ func Load() Config {
 		}
 		seedPwd, seedPwdGenerated = "seed-"+hex.EncodeToString(buf), true
 	}
+	totpEnabled := false
+	if v := os.Getenv("TOTP_ENABLED"); v == "1" || v == "true" {
+		totpEnabled = true
+	}
 	return Config{
 		ListenAddr:       env("LISTEN_ADDR", ":8080"),
 		StaffListenAddr:  env("STAFF_LISTEN_ADDR", ":8081"),
@@ -69,5 +76,6 @@ func Load() Config {
 		SeedPwdGenerated: seedPwdGenerated,
 		LogFormat:        env("LOG_FORMAT", "json"),
 		RetentionDays:    retention,
+		TotpEnabled:      totpEnabled,
 	}
 }
