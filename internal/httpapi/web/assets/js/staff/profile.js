@@ -164,7 +164,11 @@ function passwordPrompt() {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px';
     const card = document.createElement('div');
     card.className = 'card';
-    card.style.cssText = 'max-width:380px;width:100%;margin:0';
+    // Телефон + открытая клавиатура: ограничиваем высоту, даём скролл.
+    card.style.cssText =
+      'max-width:380px;width:100%;margin:0;' +
+      'max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);' +
+      'overflow-y:auto;-webkit-overflow-scrolling:touch';
     const title = document.createElement('h2');
     title.textContent = 'Отключение 2FA';
     const sub = document.createElement('p');
