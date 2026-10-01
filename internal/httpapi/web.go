@@ -26,6 +26,11 @@ func assetsHandler() http.Handler {
 		// изменился — браузер обязан забрать свежую версию.
 		p := strings.TrimPrefix(r.URL.Path, "/assets/")
 		if p != "" && !strings.HasSuffix(p, "/") {
+			// .webmanifest неизвестен mime-таблицам ОС — тип ставим сами,
+			// иначе браузер может получить application/octet-stream и забраковать манифест.
+			if strings.HasSuffix(p, ".webmanifest") {
+				w.Header().Set("Content-Type", "application/manifest+json")
+			}
 			if data, err := fs.ReadFile(sub, path.Clean(p)); err == nil {
 				sum := sha256.Sum256(data)
 				etag := `"` + hex.EncodeToString(sum[:8]) + `"`
@@ -39,6 +44,25 @@ func assetsHandler() http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// swHandler отдаёт service worker заявителя (PWA). Файл лежит в assets, но
+// маршрутизируется с корня (/sw.js): scope SW определяется путём файла, а не
+// манифестом, и заголовок Service-Worker-Allowed: "/" разрешает перехват
+// всех страниц заявителя. no-cache — браузер обязан сверяться с сервером,
+// иначе застряла бы старая версия воркера после деплоя.
+func swHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		data, err := webFS.ReadFile("web/assets/sw.js")
+		if err != nil {
+			http.Error(w, "sw not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
+	}
 }
 
 func (s *Server) pageFor(mode, file string) http.HandlerFunc {
