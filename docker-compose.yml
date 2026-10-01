@@ -54,6 +54,37 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Ночные бэкапы БД: pg_dump в кастомном формате (-Fc — сжатие и выборочное
+  # восстановление), ротация последних N копий (BACKUP_KEEP, по умолчанию 14).
+  # Первый бэкап делается сразу при старте контейнера — удобно проверять.
+  # Восстановление: docker compose exec db pg_restore -U otklik -d otklik --clean /backups/...
+  db-backup:
+    image: postgres:16-alpine
+    container_name: otklik-db-backup
+    environment:
+      PGUSER: otklik
+      PGPASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}"
+      PGHOST: db
+      PGDATABASE: otklik
+      BACKUP_KEEP: "${BACKUP_KEEP:-14}"
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M%S)
+          pg_dump -Fc -f "/backups/otklik-$$ts.dump"
+          echo "backup saved: otklik-$$ts.dump"
+          ls -1t /backups/otklik-*.dump | tail -n +$$(($$BACKUP_KEEP + 1)) | xargs -r rm -f
+          sleep 86400
+        done
+    restart: unless-stopped
+
   # TLS-терминация: PUBLIC_SITE -> app:8080 (заявители), STAFF_SITE -> app:8081 (сотрудники).
   # Сайты задаются в .env (см. .env.example); домены — Let's Encrypt, IP — самоподписанный сертификат.
   caddy:
@@ -77,6 +108,7 @@ services:
 
 volumes:
   pgdata:
+  backups:
   appdata:
   caddy_data:
   caddy_config:
