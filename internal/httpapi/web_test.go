@@ -43,6 +43,43 @@ func TestApplicantPagesServe(t *testing.T) {
 	}
 }
 
+// PWA заявителя: service worker отдаётся с корня с заголовком
+// Service-Worker-Allowed (scope "/") и no-cache (обновление после деплоя),
+// манифест — с корректным Content-Type. На служебном порту PWA нет.
+func TestPWAAssets(t *testing.T) {
+	h := httpapi.New(testCfg(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/sw.js", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /sw.js: код = %d, want 200", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/javascript") {
+		t.Errorf("/sw.js: Content-Type = %q", ct)
+	}
+	if v := w.Header().Get("Service-Worker-Allowed"); v != "/" {
+		t.Errorf("/sw.js: Service-Worker-Allowed = %q, want \"/\"", v)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("/sw.js: Cache-Control = %q, want no-cache", cc)
+	}
+
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/assets/manifest.webmanifest", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /assets/manifest.webmanifest: код = %d, want 200", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/manifest+json") {
+		t.Errorf("manifest: Content-Type = %q, want application/manifest+json", ct)
+	}
+
+	w = httptest.NewRecorder()
+	httpapi.NewStaff(testCfg(), nil).ServeHTTP(w, httptest.NewRequest("GET", "/sw.js", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("staff GET /sw.js: код = %d, want 404 (PWA только у заявителя)", w.Code)
+	}
+}
+
 func TestStaffPagesServe(t *testing.T) {
 	h := httpapi.NewStaff(testCfg(), nil)
 	for _, p := range []string{"/", "/login", "/operator", "/expert", "/admin", "/detail", "/detail/00000000-0000-0000-0000-000000000000"} {
