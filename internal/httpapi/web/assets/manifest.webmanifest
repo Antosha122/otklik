@@ -1,0 +1,30 @@
+{
+  "name": "Отклик — анонимная помощь",
+  "short_name": "Отклик",
+  "description": "Спокойное место, где можно осторожно рассказать о трудной ситуации и получить помощь специалиста. Анонимно, без регистрации.",
+  "lang": "ru",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf4f1",
+  "theme_color": "#0f9c8c",
+  "icons": [
+    { "src": "/assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Новое обращение",
+      "url": "/new",
+      "icons": [{ "src": "/assets/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Проверить по трек-номеру",
+      "url": "/track",
+      "icons": [{ "src": "/assets/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
