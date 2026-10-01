@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	itSeedPwd           = "otklik-it-pwd"
+	itSeedPwd           = "it-strong-pwd-42" // без «otklik»: блоклист слабых паролей запрещает имя сервиса
 	applicantCookieName = "otklik_applicant"
 )
 

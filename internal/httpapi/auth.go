@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -28,6 +29,36 @@ func hashToken(token string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// applicantUAHash — «отпечаток устройства» сессии заявителя: sha256 от
+// User-Agent. Не идеальная идентификация (UA подделывается), но кука,
+// уведённая вместе с трек-номером (подсмотренный экран, письмо, чат),
+// на другом браузере/устройстве уже не работает. Сессия живёт в одном
+// окружении; сменился браузер — новый вход по трек-номеру.
+func applicantUAHash(r *http.Request) string {
+	return hashToken(strings.TrimSpace(r.UserAgent()))
+}
+
+// rotateApplicantSession заменяет токен сессии заявителя на свежий
+// («постепенный refresh»: если до истечения осталось меньше половины TTL,
+// активный пользователь получает новую куку, старый токен удаляется —
+// окно жизни украденной куки ограничено). Вызывается из authMW до
+// next.ServeHTTP, поэтому SetCookie успевает попасть в заголовки.
+func (s *Server) rotateApplicantSession(w http.ResponseWriter, r *http.Request, oldHash string, appealID uuid.UUID) {
+	token, tokenHash, err := newToken()
+	if err != nil {
+		slog.Error("applicant session rotate: token", "error", err)
+		return
+	}
+	if err := s.st.CreateApplicantSession(r.Context(), tokenHash, appealID, time.Now().Add(s.cfg.SessionTTL), applicantUAHash(r)); err != nil {
+		slog.Error("applicant session rotate: create", "error", err)
+		return
+	}
+	// Старая сессия не удалится — не страшно: она истечёт по expires_at,
+	// часовой джанистор подчистит.
+	_ = s.st.DeleteApplicantSession(r.Context(), oldHash)
+	s.setCookie(w, applicantCookie, token)
+}
+
 func (s *Server) setCookie(w http.ResponseWriter, name, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
@@ -50,6 +81,10 @@ func (s *Server) clearCookie(w http.ResponseWriter, name string) {
 type loginReq struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
+	// TotpCode — код приложения-аутентификатора; обязателен, если у
+	// пользователя включён второй фактор (без него сервер ответит
+	// 401 c totp_required — фронт покажет поле ввода кода).
+	TotpCode string `json:"totp_code"`
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +115,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Второй фактор: пароль верный, но теперь нужен одноразовый код.
+	if !s.checkTOTPAtLogin(w, r, u.ID, u.Login, req.TotpCode) {
+		return
+	}
+
 	// Флаг обязательной смены сверяется с фактом: пароль уже не демо-пароль
 	// (например, хеш меняли руками, а флаг остался) — требовать смену нельзя.
 	// Демо-пароль всё ещё стоит — смена обязательна один раз, до фактической замены.
@@ -104,6 +144,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.setCookie(w, staffCookie, token)
 	// Токен живёт только в HttpOnly-куке: дублирование в теле ответа убрано,
 	// фронтенд ходит исключительно через cookie-сессию.
+	totpEnabled := false
+	if _, enabled, err := s.st.GetTOTPSecret(r.Context(), u.ID); err == nil {
+		totpEnabled = enabled
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id":              u.ID,
 		"login":                u.Login,
@@ -111,6 +155,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"specialist_group":     u.SpecialistGroup,
 		"active":               u.Active,
 		"must_change_password": u.MustChangePassword,
+		"totp_enabled":         totpEnabled,
 	})
 }
 

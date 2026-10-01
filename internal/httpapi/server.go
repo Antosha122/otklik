@@ -246,6 +246,11 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 	r.Post("/api/auth/login", s.handleLogin)
 	r.Post("/api/auth/logout", s.handleLogout)
 	r.With(s.requireStaff).Post("/api/auth/password", s.handleChangePassword)
+	// Второй фактор (TOTP): настройка и управление — из личного кабинета.
+	r.With(s.requireStaff).Get("/api/auth/totp", s.handleTOTPStatus)
+	r.With(s.requireStaff).Post("/api/auth/totp/setup", s.handleTOTPSetup)
+	r.With(s.requireStaff).Post("/api/auth/totp/enable", s.handleTOTPEnable)
+	r.With(s.requireStaff).Post("/api/auth/totp/disable", s.handleTOTPDisable)
 	r.Get("/api/me", s.handleMe)
 
 	// Общая группа вне ролевых: в chi поздняя регистрация перекрывает раннюю.
@@ -344,10 +349,27 @@ func (s *Server) authMW(allowStaff, allowApplicant bool) func(http.Handler) http
 			if !found && allowApplicant {
 				if c, err := r.Cookie(applicantCookie); err == nil && c.Value != "" {
 					hash := hashToken(c.Value)
-					appealID, ok, err := s.st.GetApplicantSession(r.Context(), hash)
-					if err == nil && ok {
-						p = domain.Principal{Role: domain.RoleApplicant, AppealID: appealID}
-						found = true
+					appealID, uaHash, expires, ok, err := s.st.GetApplicantSession(r.Context(), hash)
+					if err != nil {
+						slog.Error("applicant session lookup", "error", err)
+					} else if ok {
+						// Привязка сессии к устройству: трек-номер и кука,
+						// уведённые с одного экрана, на другом браузере не работают.
+						if uaHash == applicantUAHash(r) {
+							p = domain.Principal{Role: domain.RoleApplicant, AppealID: appealID}
+							found = true
+							// Постепенный refresh: активному заявителю, у которого
+							// до истечения сессии осталось меньше половины TTL,
+							// выдаём свежий токен (старый удаляется).
+							if time.Until(expires) < s.cfg.SessionTTL/2 {
+								s.rotateApplicantSession(w, r, hash, appealID)
+							}
+						} else {
+							// Кто-то пытается пользоваться сессией с другого
+							// устройства — это может быть и уведённая кука.
+							slog.Warn("applicant session: user-agent mismatch",
+								"appeal_id", appealID, "remote", clientIP(r))
+						}
 					}
 				}
 			}

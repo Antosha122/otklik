@@ -184,7 +184,7 @@ func (s *Server) handleVerifyTrack(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if err := s.st.CreateApplicantSession(r.Context(), tokenHash, appealID, time.Now().Add(s.cfg.SessionTTL)); err != nil {
+	if err := s.st.CreateApplicantSession(r.Context(), tokenHash, appealID, time.Now().Add(s.cfg.SessionTTL), applicantUAHash(r)); err != nil {
 		writeErr(w, r, err)
 		return
 	}

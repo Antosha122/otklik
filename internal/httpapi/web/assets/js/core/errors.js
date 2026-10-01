@@ -16,6 +16,12 @@ const SERVER_ERRORS_RU = {
   'new password must differ from current': 'Новый пароль должен отличаться от текущего',
   'password change required': 'Требуется сменить пароль по умолчанию',
 
+  'totp code required': 'Введите код двухфакторной аутентификации',
+  'invalid totp code': 'Неверный код двухфакторной аутентификации',
+  'totp is already enabled: disable it first': 'Двухфакторная аутентификация уже включена — сначала отключите её',
+  'run totp setup first': 'Сначала запустите настройку 2FA и добавьте секрет в приложение',
+  'invalid password': 'Неверный пароль',
+
   'applicant_type must be schoolchild, parent or teacher': 'Тип заявителя указан неверно',
   'category_id is required unless free_text is true': 'Выберите категорию или отправьте обращение свободным текстом',
   'category_id is invalid': 'Категория выбрана неверно',

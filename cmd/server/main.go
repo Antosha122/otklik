@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -63,27 +64,44 @@ func main() {
 	// ТЗ 5.1: «закрыто без ответа» переводит система — фоновый джоб
 	// закрывает обращения, где заявитель не возвращался дольше N дней.
 	// Он же раз в час подчищает истёкшие сессии (обе таблицы).
+	// Shutdown: джоб живёт в горутине, main обязан дождаться её завершения
+	// (WaitGroup) — иначе PurgeTerminalAppeals оборвётся посреди удаления
+	// файлов вложений и останутся осиротевшие каталоги, которые никто
+	// больше не удалит. БД-фазы получают отменяемый ctx, а файловая фаза
+	// ретеншна — WithoutCancel: начатую чистку диска важно докончить.
+	var janitorWG sync.WaitGroup
+	janitorWG.Add(1)
 	go func() {
+		defer janitorWG.Done()
 		run := func() {
 			n, err := st.AutoCloseNoResponse(ctx)
 			if err != nil {
-				slog.Error("janitor: auto-close", "error", err)
+				if ctx.Err() == nil {
+					slog.Error("janitor: auto-close", "error", err)
+				}
 			} else if n > 0 {
 				slog.Info("janitor: closed appeals without applicant response", "count", n)
 			}
+			if ctx.Err() != nil {
+				return
+			}
 			purged, err := st.PurgeExpiredSessions(ctx)
 			if err != nil {
-				slog.Error("janitor: purge sessions", "error", err)
+				if ctx.Err() == nil {
+					slog.Error("janitor: purge sessions", "error", err)
+				}
 			} else if purged > 0 {
 				slog.Info("janitor: purged expired sessions", "count", purged)
 			}
 			// Retention: терминальные обращения старше RETENTION_DAYS удаляются
 			// вместе с файлами вложений — персональные данные не хранятся вечно.
 			if cfg.RetentionDays > 0 {
-				ids, err := st.PurgeTerminalAppeals(ctx, cfg.RetentionDays)
+				ids, err := st.PurgeTerminalAppeals(context.WithoutCancel(ctx), cfg.RetentionDays)
 				if err != nil {
 					slog.Error("janitor: retention purge", "error", err)
 				} else if len(ids) > 0 {
+					// Раз удаления из БД прошли, каталоги вложений обязаны
+					// исчезнуть до конца — отсюда и WithoutCancel выше.
 					dirs := 0
 					for _, id := range ids {
 						if err := os.RemoveAll(filepath.Join(cfg.AttachmentsDir, id.String())); err == nil {
@@ -103,6 +121,7 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
+				slog.Info("janitor: stopping")
 				return
 			case <-ticker.C:
 				run()
@@ -141,5 +160,19 @@ func main() {
 	}
 	if err := staffSrv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("shutdown staff", "error", err)
+	}
+	// Джанистор мог быть в середине чистки: ждём его завершения, но не
+	// дольше собственного бюджета (ретеншн-фаза неотменяема сознательно —
+	// доканчивает начатое удаление, обычно это секунды).
+	janitorDone := make(chan struct{})
+	go func() {
+		janitorWG.Wait()
+		close(janitorDone)
+	}()
+	select {
+	case <-janitorDone:
+		slog.Info("otklik: stopped")
+	case <-time.After(15 * time.Second):
+		slog.Error("janitor: graceful stop timed out, exiting anyway")
 	}
 }

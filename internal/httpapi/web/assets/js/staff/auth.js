@@ -19,9 +19,14 @@ export async function login() {
     showErr('stErr', new Error('Введите логин и пароль'));
     return;
   }
+  // Код второго фактора прикладываем, только если пользователь его ввёл;
+  // без кода сервер с включённой 2FA ответит 401 и покажет поле ниже.
+  const body = { login, password: pass };
+  const totpCode = $('stTotp') ? $('stTotp').value.trim() : '';
+  if (totpCode) body.totp_code = totpCode;
   try {
     // Сессия живёт в HttpOnly-куке; тело ответа токен не содержит.
-    const me = await api('POST', '/api/auth/login', { login, password: pass });
+    const me = await api('POST', '/api/auth/login', body);
     staffState.me = me;
     // Демо-пароль обязан быть сменён при первом входе — до смены API закрыт (403).
     if (me.must_change_password) {
@@ -30,6 +35,21 @@ export async function login() {
     }
     if (hooks.afterLogin) await hooks.afterLogin();
   } catch (e) {
+    // 2FA: сервер требует одноразовый код — показываем поле и ждём повторного
+    // входа (логин/пароль уже введены, дописывать нужно только код).
+    const m = e.message;
+    if (m === 'totp code required' || m === 'Введите код двухфакторной аутентификации') {
+      $('totpRow').classList.remove('hidden');
+      if ($('stTotp')) $('stTotp').focus();
+      showErr('stErr', new Error('Для этой учётной записи включена 2FA — введите код из приложения-аутентификатора'));
+      return;
+    }
+    if (m === 'invalid totp code' || m === 'Неверный код двухфакторной аутентификации') {
+      $('totpRow').classList.remove('hidden');
+      if ($('stTotp')) { $('stTotp').value = ''; $('stTotp').focus(); }
+      showErr('stErr', new Error('Код неверен или устарел — введите актуальный из приложения'));
+      return;
+    }
     showErr('stErr', e);
   }
 }

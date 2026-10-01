@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -37,11 +38,30 @@ func (s *Server) writeApplicantView(w http.ResponseWriter, r *http.Request, appe
 		writeErr(w, r, err)
 		return
 	}
-	answers, _ := s.st.ListIntakeAnswers(r.Context(), appealID)
-	history, _ := s.st.ListStatusHistoryForApplicant(r.Context(), appealID)
-	messages, _ := s.st.ListMessages(r.Context(), appealID)
-	attachments, _ := s.st.ListAttachments(r.Context(), appealID)
-	set, _ := s.st.GetSettings(r.Context())
+	// Мягкая деградация: обращение показываем даже если соседние выборки
+	// упали. Но молча глотать ошибки нельзя — при инциденте (БД на грани,
+	// упавший индекс) «пустое» обращение без единого лога не диагностировать.
+	// Поэтому каждую неудачную часть логируем с appeal_id.
+	var answers []store.IntakeAnswer
+	var history []store.StatusHistoryItem
+	var messages []store.Message
+	var attachments []store.Attachment
+	var set store.Settings
+	if answers, err = s.st.ListIntakeAnswers(r.Context(), appealID); err != nil {
+		slog.Warn("applicant view degraded: intake answers", "appeal_id", appealID, "error", err)
+	}
+	if history, err = s.st.ListStatusHistoryForApplicant(r.Context(), appealID); err != nil {
+		slog.Warn("applicant view degraded: status history", "appeal_id", appealID, "error", err)
+	}
+	if messages, err = s.st.ListMessages(r.Context(), appealID); err != nil {
+		slog.Warn("applicant view degraded: messages", "appeal_id", appealID, "error", err)
+	}
+	if attachments, err = s.st.ListAttachments(r.Context(), appealID); err != nil {
+		slog.Warn("applicant view degraded: attachments", "appeal_id", appealID, "error", err)
+	}
+	if set, err = s.st.GetSettings(r.Context()); err != nil {
+		slog.Warn("applicant view degraded: settings", "appeal_id", appealID, "error", err)
+	}
 
 	resp := applicantAppealResp{
 		ID: a.ID, Status: a.Status,

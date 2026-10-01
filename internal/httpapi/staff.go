@@ -245,12 +245,22 @@ func (s *Server) handleSetCrisisFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOperatorQueue(w http.ResponseWriter, r *http.Request) {
-	items, err := s.st.ListOperatorQueue(r.Context())
+	// Пагинация как у остальных списков: очередь может вырасти до тысяч
+	// обращений, отдавать её целиком — недопустимо тяжёлый ответ.
+	pq, pg, _, err := parsePageQuery(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResp{"page and per_page must be positive integers (per_page max 100)"})
+		return
+	}
+	items, totals, err := s.st.ListOperatorQueue(r.Context(), pg)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
+	body := pagedBody("appeals", items, pq, totals.Total)
+	// Счётчик просроченных нужен по всей очереди, а не по странице.
+	body["overdue_total"] = totals.Overdue
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleOperatorAppeals(w http.ResponseWriter, r *http.Request) {

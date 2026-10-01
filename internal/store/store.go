@@ -152,25 +152,27 @@ func (st *Store) DeleteStaffSession(ctx context.Context, tokenHash string) error
 	return err
 }
 
-func (st *Store) CreateApplicantSession(ctx context.Context, tokenHash string, appealID uuid.UUID, expires time.Time) error {
+func (st *Store) CreateApplicantSession(ctx context.Context, tokenHash string, appealID uuid.UUID, expires time.Time, uaHash string) error {
 	_, err := st.DB.ExecContext(ctx,
-		`INSERT INTO applicant_sessions (token_hash, appeal_id, expires_at) VALUES ($1, $2, $3)`,
-		tokenHash, appealID, expires)
+		`INSERT INTO applicant_sessions (token_hash, appeal_id, expires_at, ua_hash) VALUES ($1, $2, $3, $4)`,
+		tokenHash, appealID, expires, uaHash)
 	return err
 }
 
-func (st *Store) GetApplicantSession(ctx context.Context, tokenHash string) (uuid.UUID, bool, error) {
-	var appealID uuid.UUID
-	err := st.DB.QueryRowContext(ctx,
-		`SELECT appeal_id FROM applicant_sessions WHERE token_hash = $1 AND expires_at > now()`,
-		tokenHash).Scan(&appealID)
+// GetApplicantSession возвращает обращение, привязку к устройству (хэш
+// User-Agent) и момент истечения сессии. Сверка uaHash — на вызывающей
+// стороне (authMW): чужой браузер с той же кукой не проходит.
+func (st *Store) GetApplicantSession(ctx context.Context, tokenHash string) (appealID uuid.UUID, uaHash string, expires time.Time, ok bool, err error) {
+	err = st.DB.QueryRowContext(ctx,
+		`SELECT appeal_id, ua_hash, expires_at FROM applicant_sessions WHERE token_hash = $1 AND expires_at > now()`,
+		tokenHash).Scan(&appealID, &uaHash, &expires)
 	if err == sql.ErrNoRows {
-		return uuid.Nil, false, nil
+		return uuid.Nil, "", time.Time{}, false, nil
 	}
 	if err != nil {
-		return uuid.Nil, false, err
+		return uuid.Nil, "", time.Time{}, false, err
 	}
-	return appealID, true, nil
+	return appealID, uaHash, expires, true, nil
 }
 
 func (st *Store) DeleteApplicantSession(ctx context.Context, tokenHash string) error {

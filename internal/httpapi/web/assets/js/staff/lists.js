@@ -21,6 +21,7 @@ const fmtDur = (sec) => {
 // Состояние страниц списков: фильтры сбрасывают страницу на первую.
 let opAllPage = 1;
 let exPage = 1;
+let queuePage = 1;
 
 // pagerHTML — блок «назад/вперёд» для постраничных списков (ключ pg-<name>
 // регистрируется в actions, data-arg — целевая страница).
@@ -35,8 +36,12 @@ export function pagerHTML(name, page, totalPages) {
 
 export async function loadQueue() {
   try {
-    const q = (await api('GET', '/api/operator/queue')).appeals || [];
-    const overdue = q.filter((a) => a.overdue).length;
+    // Очередь пагинирована (per_page по умолчанию 20): при тысячах обращений
+    // отдавать её целиком нельзя. overdue_total — счётчик просроченных по
+    // всей очереди, а не только по текущей странице.
+    const r = await api('GET', '/api/operator/queue?page=' + queuePage);
+    const q = r.appeals || [];
+    const overdue = r.overdue_total || 0;
     const cnt = $('opQueueOverdue');
     cnt.textContent = `просроченных: ${overdue}`;
     cnt.classList.toggle('hidden', overdue === 0);
@@ -53,7 +58,8 @@ export async function loadQueue() {
         : '') +
       (rest.length
         ? rest.map((a) => item(a)).join('')
-        : (crisis.length ? '' : '<div class="note" style="margin-top:8px">очередь пуста</div>'));
+        : (crisis.length ? '' : '<div class="note" style="margin-top:8px">очередь пуста</div>')) +
+      pagerHTML('queue', r.page, r.total_pages);
   } catch (e) { toast(e.message); }
 }
 
@@ -134,11 +140,12 @@ export async function loadOpComplaints() {
 
 registerActions({
   'open-detail': (id) => { location.href = '/detail/' + encodeURIComponent(id); },
-  'reload-queue': loadQueue,
+  'reload-queue': () => { queuePage = 1; loadQueue(); },
   'reload-op-all': () => { opAllPage = 1; loadOpAll(); },
   'reload-expert': () => { exPage = 1; loadExpert(); },
   'reload-my-stats': loadMyStats,
   'reload-op-complaints': loadOpComplaints,
+  'pg-queue': (p) => { queuePage = Math.max(1, Number(p) || 1); loadQueue(); },
   'pg-op-all': (p) => { opAllPage = Math.max(1, Number(p) || 1); loadOpAll(); },
   'pg-expert': (p) => { exPage = Math.max(1, Number(p) || 1); loadExpert(); },
 });

@@ -51,10 +51,22 @@ const routingFlagsSQL = `
 	                                    'needs_clarification', 'answer_ready')) < %d
 	       )`
 
-func (st *Store) ListOperatorQueue(ctx context.Context) ([]QueueItem, error) {
+// QueueTotals — агрегаты всей очереди (не только текущей страницы):
+// фронту нужен счётчик просроченных, даже когда их вынесло на дальнюю страницу.
+type QueueTotals struct {
+	Total   int `json:"total"`
+	Overdue int `json:"overdue"`
+}
+
+// ListOperatorQueue возвращает страницу очереди новых обращений
+// (page/per_page как у остальных списков) и агрегаты по всей очереди.
+// Агрегаты считаются оконными функциями в том же проходе; пустая страница
+// (offset за пределами очереди) дополняется отдельным COUNT-запросом,
+// чтобы метаданные страниц оставались честными.
+func (st *Store) ListOperatorQueue(ctx context.Context, pg Page) ([]QueueItem, QueueTotals, error) {
 	set, err := st.GetSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, QueueTotals{}, err
 	}
 	rows, err := st.DB.QueryContext(ctx, `
 		SELECT a.id, a.applicant_type, c.name, a.status, a.priority, a.crisis_detected,
@@ -62,30 +74,50 @@ func (st *Store) ListOperatorQueue(ctx context.Context) ([]QueueItem, error) {
 		       EXTRACT(EPOCH FROM (now() - a.created_at))::int,
 		       EXTRACT(EPOCH FROM (now() - a.created_at))::int > $1,
 		       (SELECT count(*) FROM attachments at WHERE at.appeal_id = a.id),
-		       `+fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit)+`
+		       `+fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit)+`,
+		       count(*) OVER (),
+		       count(*) FILTER (WHERE EXTRACT(EPOCH FROM (now() - a.created_at))::int > $1) OVER ()
 		FROM appeals a LEFT JOIN categories c ON c.id = a.category_id
 		WHERE a.status IN ('new', 'returned') OR a.transfer_requested
 		ORDER BY a.crisis_detected DESC,
 		         (a.priority = 'urgent') DESC,
 		         EXTRACT(EPOCH FROM (now() - a.created_at))::int > $1 DESC,
-		         a.created_at ASC`,
-		domain.QueueOverdueHours*3600)
+		         a.created_at ASC
+		LIMIT $2 OFFSET $3`,
+		domain.QueueOverdueHours*3600, pg.Limit, pg.Offset)
 	if err != nil {
-		return nil, err
+		return nil, QueueTotals{}, err
 	}
 	defer rows.Close()
 	var out []QueueItem
+	totals := QueueTotals{}
 	for rows.Next() {
 		var it QueueItem
 		if err := rows.Scan(&it.ID, &it.ApplicantType, &it.CategoryName, &it.Status,
 			&it.Priority, &it.CrisisDetected, &it.TransferRequested, &it.ReturnCount,
 			&it.CreatedAt, &it.WaitingSec, &it.Overdue, &it.AttachmentsCount,
-			&it.RoutingGroup, &it.NoExpertInGroup, &it.GroupOverloaded); err != nil {
-			return nil, err
+			&it.RoutingGroup, &it.NoExpertInGroup, &it.GroupOverloaded,
+			&totals.Total, &totals.Overdue); err != nil {
+			return nil, QueueTotals{}, err
 		}
 		out = append(out, it)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, QueueTotals{}, err
+	}
+	// Пустая страница (за пределами очереди): оконных строк нет — считаем
+	// агрегаты отдельным запросом, чтобы total/total_pages не врали.
+	if len(out) == 0 && pg.Offset > 0 {
+		if err := st.DB.QueryRowContext(ctx, `
+			SELECT count(*),
+			       count(*) FILTER (WHERE EXTRACT(EPOCH FROM (now() - a.created_at))::int > $1)
+			FROM appeals a
+			WHERE a.status IN ('new', 'returned') OR a.transfer_requested`,
+			domain.QueueOverdueHours*3600).Scan(&totals.Total, &totals.Overdue); err != nil {
+			return nil, QueueTotals{}, err
+		}
+	}
+	return out, totals, nil
 }
 
 type OperatorListItem struct {
