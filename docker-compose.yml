@@ -31,6 +31,11 @@ services:
       SEED_DEFAULT_PWD: "${SEED_DEFAULT_PWD:-otklik-demo-2026}"
       # 1 = куки только по HTTPS (прод за Caddy); локальная разработка — 0 в .env.
       COOKIE_SECURE: "${COOKIE_SECURE:-1}"
+      # Срок хранения завершённых обращений (дней); 0 — хранить бессрочно.
+      # Персональные данные детей не должны копиться вечно.
+      RETENTION_DAYS: "${RETENTION_DAYS:-730}"
+      # Формат логов: json — для прода (собирает Docker), text — локальная отладка.
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
     ports:
       # Прямой доступ только с localhost; наружу всё идёт через caddy (TLS).
       - "127.0.0.1:8080:8080"

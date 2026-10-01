@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -69,6 +70,25 @@ func main() {
 				slog.Error("janitor: purge sessions", "error", err)
 			} else if purged > 0 {
 				slog.Info("janitor: purged expired sessions", "count", purged)
+			}
+			// Retention: терминальные обращения старше RETENTION_DAYS удаляются
+			// вместе с файлами вложений — персональные данные не хранятся вечно.
+			if cfg.RetentionDays > 0 {
+				ids, err := st.PurgeTerminalAppeals(ctx, cfg.RetentionDays)
+				if err != nil {
+					slog.Error("janitor: retention purge", "error", err)
+				} else if len(ids) > 0 {
+					dirs := 0
+					for _, id := range ids {
+						if err := os.RemoveAll(filepath.Join(cfg.AttachmentsDir, id.String())); err == nil {
+							dirs++
+						} else {
+							slog.Error("janitor: remove attachment dir", "appeal_id", id, "error", err)
+						}
+					}
+					slog.Info("janitor: purged terminal appeals",
+						"count", len(ids), "attachment_dirs_removed", dirs, "retention_days", cfg.RetentionDays)
+				}
 			}
 		}
 		run()

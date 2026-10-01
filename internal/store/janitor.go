@@ -28,6 +28,46 @@ func (st *Store) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+// PurgeTerminalAppeals удаляет терминальные обращения (completed / rejected /
+// closed_no_response), не обновлявшиеся дольше retentionDays, вместе с чатом,
+// событиями, вложениями и сессиями заявителя (каскад по внешним ключам).
+// Возвращает идентификаторы удалённых обращений — вызывающая сторона по ним
+// стирает файлы вложений с диска. Персональные данные детей не должны
+// храниться бессрочно: срок задаётся RETENTION_DAYS, 0 — хранить вечно.
+func (st *Store) PurgeTerminalAppeals(ctx context.Context, retentionDays int) ([]uuid.UUID, error) {
+	if retentionDays <= 0 {
+		return nil, nil
+	}
+	rows, err := st.DB.QueryContext(ctx, `
+		SELECT id FROM appeals
+		WHERE status IN ('completed','rejected','closed_no_response')
+		  AND updated_at < now() - make_interval(days => $1)
+		ORDER BY updated_at`, retentionDays)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return ids, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return ids, err
+	}
+	for _, id := range ids {
+		if _, err := st.DB.ExecContext(ctx,
+			`DELETE FROM appeals WHERE id = $1 AND status IN ('completed','rejected','closed_no_response')`,
+			id); err != nil {
+			return ids, err
+		}
+	}
+	return ids, nil
+}
+
 // AutoCloseNoResponse закрывает без ответа обращения, где заявитель не возвращался
 // дольше no_response_days (ТЗ 5.1: «заявитель не вернулся N дней — система»).
 // Активность заявителя = последнее его сообщение в чате; если сообщений не было —
