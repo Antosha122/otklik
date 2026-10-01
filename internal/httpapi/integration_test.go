@@ -117,6 +117,48 @@ func TestIT_MustChangePassword(t *testing.T) {
 	}
 }
 
+// Сверка флага обязательной смены с фактом при логине: если пароль уже
+// НЕ демо-пароль, повторных требований смены быть не должно — даже если
+// флаг кем-то выставлен заново (ручной сброс хеша, перенос БД и т.п.).
+func TestIT_MustChangePasswordReconcile(t *testing.T) {
+	e := newIT(t)
+
+	// Пароль ещё демо-пароль → смена обязательна (флаг остаётся true).
+	if _, err := e.st.DB.ExecContext(context.Background(),
+		`UPDATE users SET must_change_password = true WHERE login = 'lawyer1'`); err != nil {
+		t.Fatal(err)
+	}
+	w := e.do(e.staff, "POST", "/api/auth/login", "", nil,
+		map[string]string{"login": "lawyer1", "password": itSeedPwd})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"must_change_password":true`) {
+		t.Fatalf("демо-пароль требует смены: %d %s", w.Code, w.Body.String())
+	}
+
+	// Сотрудник меняет пароль на свой...
+	tok := e.staffTokenOf(w)
+	w = e.mustDo(e.staff, "POST", "/api/auth/password", tok, nil,
+		map[string]string{"current_password": itSeedPwd, "new_password": "my-own-strong-pwd"}, http.StatusOK)
+
+	// ...а флаг «вдруг» снова true (имитация ручного сброса/переноса).
+	if _, err := e.st.DB.ExecContext(context.Background(),
+		`UPDATE users SET must_change_password = true WHERE login = 'lawyer1'`); err != nil {
+		t.Fatal(err)
+	}
+	w = e.do(e.staff, "POST", "/api/auth/login", "", nil,
+		map[string]string{"login": "lawyer1", "password": "my-own-strong-pwd"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"must_change_password":false`) {
+		t.Fatalf("свой пароль не должен требовать смены: %d %s", w.Code, w.Body.String())
+	}
+	tok = e.staffTokenOf(w)
+	// Флаг погашен и в БД: API открыт без повторного диалога.
+	e.mustDo(e.staff, "GET", "/api/profile", tok, nil, nil, http.StatusOK)
+
+	// Возвращаем демо-пароль: последующие тесты логинятся lawyer1 с itSeedPwd.
+	e.mustDo(e.staff, "POST", "/api/auth/password", tok, nil,
+		map[string]string{"current_password": "my-own-strong-pwd", "new_password": itSeedPwd}, http.StatusOK)
+}
+
+
 // itEnv — изолированные HTTP-инстансы (свежие rate-limiter'ы) поверх общей БД.
 type itEnv struct {
 	t     *testing.T
@@ -132,6 +174,9 @@ func newIT(t *testing.T) *itEnv {
 	cfg := config.Config{
 		SessionTTL:     time.Hour,
 		AttachmentsDir: t.TempDir(),
+		// Демо-пароль сервера совпадает с сид-паролём: тест обязательной смены
+		// и сверка флага с фактом работают на тех же данных.
+		SeedDefaultPwd: itSeedPwd,
 	}
 	return &itEnv{
 		t:     t,

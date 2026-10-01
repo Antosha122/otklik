@@ -107,6 +107,16 @@ func (st *Store) UpdateUserPassword(ctx context.Context, id uuid.UUID, passwordH
 	return err
 }
 
+// SetMustChangePassword выставляет/снимает флаг обязательной смены пароля.
+// Используется при логине для сверки флага с фактом: если пароль уже не
+// демо-пароль, требовать смену больше нельзя.
+func (st *Store) SetMustChangePassword(ctx context.Context, id uuid.UUID, v bool) error {
+	_, err := st.DB.ExecContext(ctx,
+		`UPDATE users SET must_change_password = $2 WHERE id = $1`,
+		id, v)
+	return err
+}
+
 // DeleteStaffSessionsForUser удаляет все сессии пользователя, кроме exceptTokenHash
 // (пустой exceptTokenHash — удалить все, используется при деактивации).
 func (st *Store) DeleteStaffSessionsForUser(ctx context.Context, userID uuid.UUID, exceptTokenHash string) error {

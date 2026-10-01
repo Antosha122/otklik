@@ -80,6 +80,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Флаг обязательной смены сверяется с фактом: пароль уже не демо-пароль
+	// (например, хеш меняли руками, а флаг остался) — требовать смену нельзя.
+	// Демо-пароль всё ещё стоит — смена обязательна один раз, до фактической замены.
+	if u.MustChangePassword && s.cfg.SeedDefaultPwd != "" &&
+		bcrypt.CompareHashAndPassword([]byte(hash), []byte(s.cfg.SeedDefaultPwd)) != nil {
+		if err := s.st.SetMustChangePassword(r.Context(), u.ID, false); err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		u.MustChangePassword = false
+	}
+
 	token, tokenHash, err := newToken()
 	if err != nil {
 		writeErr(w, r, err)
