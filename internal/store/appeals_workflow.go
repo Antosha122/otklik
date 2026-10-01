@@ -112,6 +112,42 @@ func (st *Store) FlagCrisisFromMessage(ctx context.Context, appealID uuid.UUID) 
 	return err
 }
 
+// SetCrisisFlag — ручное ревью кризисной пометки: словарь автодетекта даёт
+// ложные срабатывания, оператор подтверждает или снимает флаг. При снятии
+// «срочный» приоритет возвращается к обычному: без кризиса экстренность
+// не обоснована. Идемпотентно: повторная установка того же значения — no-op.
+func (st *Store) SetCrisisFlag(ctx context.Context, appealID uuid.UUID,
+	actorID *uuid.UUID, actorRole domain.Role, detected bool, reason string) (Appeal, error) {
+	return st.withAppealLock(ctx, appealID, func(ctx context.Context, tx *sql.Tx, a Appeal) error {
+		if a.Status.Terminal() {
+			return domain.ErrConflict
+		}
+		if a.CrisisDetected == detected {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE appeals SET crisis_detected = $2,
+				priority = CASE WHEN $2 THEN 'urgent'
+					WHEN priority = 'urgent' THEN 'normal' ELSE priority END,
+				version = version + 1, updated_at = now()
+			WHERE id = $1`, appealID, detected); err != nil {
+			return err
+		}
+		return addEvent(ctx, tx, EventPayload{
+			AppealID: appealID, ActorID: actorID, ActorRole: actorRole,
+			EventType: "crisis", OldValue: boolToStr(a.CrisisDetected), NewValue: boolToStr(detected),
+			Reason: reason,
+		})
+	})
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
 func (st *Store) SetPriority(ctx context.Context, appealID uuid.UUID,
 	actorID *uuid.UUID, actorRole domain.Role, p domain.Priority, reason string) (Appeal, error) {
 	return st.withAppealLock(ctx, appealID, func(ctx context.Context, tx *sql.Tx, a Appeal) error {

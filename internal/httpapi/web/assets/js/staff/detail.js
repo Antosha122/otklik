@@ -45,6 +45,9 @@ async function refreshDetail(silent) {
   // Кризисная пометка — только оператору и эксперту: администратор работает
   // с обращениями, но не должен видеть, что обращение кризисное.
   $('dCrisis').classList.toggle('hidden', !a.crisis_detected || isAdmin);
+  // Ревью пометки (снятие ложного срабатывания) — оператор, пока обращение в работе.
+  const crisisActions = $('dCrisisActions');
+  if (crisisActions) crisisActions.classList.toggle('hidden', !a.crisis_detected || !isOperator || !!ROUTE_TERMINAL[a.status]);
   $('dPriority').value = a.priority; // чтобы открытие карточки не сбрасывало приоритет на «низкий»
   // Текущая категория — в селект смены категории (если опции ещё не загружены, подхватит поллер)
   const dCat = $('dCategory');
@@ -285,6 +288,12 @@ const applySuggestion = (catId) => {
   toast('Категория подставлена — проверьте и нажмите «Сменить»');
 };
 
+const opCrisisClear = () => {
+  const reason = (prompt('Причина снятия кризисной пометки (минимум 5 символов):') || '').trim();
+  if (reason.length < 5) { toast('Укажите причину снятия пометки (минимум 5 символов)'); return; }
+  act('crisis-flag', { detected: false, reason }, 'Кризисная пометка снята');
+};
+
 registerActions({
   'close-detail': closeDetail,
   'detail-send-message': dSendMsg,
@@ -304,4 +313,5 @@ registerActions({
   'ex-contributor': exContributor,
   'op-close-no-response': opCloseNoResponse,
   'op-return': opReturn,
+  'op-crisis-clear': opCrisisClear,
 });

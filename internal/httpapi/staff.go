@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -197,6 +198,45 @@ func (s *Server) handleStaffGetAppeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := s.loadAppealWithAccess(r, id, p)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
+}
+
+type crisisFlagReq struct {
+	Detected *bool  `json:"detected"`
+	Reason   string `json:"reason"`
+}
+
+// handleSetCrisisFlag — ручное ревью кризисной пометки. Кризисный статус
+// видят оператор и эксперт, но подтверждать/снимать пометку по итогам
+// разговора с заявителем может только оператор: он ведёт очередь.
+func (s *Server) handleSetCrisisFlag(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r.Context())
+	if p.Role != domain.RoleOperator {
+		writeJSON(w, http.StatusForbidden, errorResp{"crisis flag is available to operator only"})
+		return
+	}
+	id, ok := s.appealID(w, r)
+	if !ok {
+		return
+	}
+	var req crisisFlagReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Detected == nil {
+		writeJSON(w, http.StatusBadRequest, errorResp{"detected must be true or false"})
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if len(req.Reason) < 5 {
+		writeJSON(w, http.StatusBadRequest, errorResp{"reason is required (min 5 characters)"})
+		return
+	}
+	a, err := s.st.SetCrisisFlag(r.Context(), id, actorPtr(p), p.Role, *req.Detected, req.Reason)
 	if err != nil {
 		writeErr(w, r, err)
 		return

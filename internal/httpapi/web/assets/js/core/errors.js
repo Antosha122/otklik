@@ -92,6 +92,9 @@ const SERVER_ERRORS_RU = {
   'category name length must be 3..100': 'Название категории должно быть от 3 до 100 символов',
   'cross-origin request rejected': 'Запрос отклонён: это действие доступно только с сайта Отклик',
   'page and per_page must be positive integers (per_page max 100)': 'Неверные параметры постраничной выдачи (per_page не больше 100)',
+  'crisis flag is available to operator only': 'Кризисную пометку меняет только оператор',
+  'detected must be true or false': 'Укажите новое значение кризисной пометки',
+  'reason is required (min 5 characters)': 'Укажите причину (минимум 5 символов)',
 };
 
 // Фолбэк по HTTP-коду: когда тело без текста ошибки либо сообщение не из словаря.
