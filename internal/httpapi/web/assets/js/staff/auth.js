@@ -75,7 +75,15 @@ function passwordDialog({ prefill = '', forced = false } = {}) {
 
     const card = document.createElement('div');
     card.className = 'card';
-    card.style.cssText = 'max-width:420px;width:100%;margin:0';
+    // На телефоне карточка с тремя полями пароля не помещается на экран
+    // (особенно с открытой клавиатурой), а forced-режим не позволяет её
+    // закрыть — ограничиваем высоту и включаем внутренний скролл.
+    // dvh точнее vh при динамических панелях браузера; старые браузеры
+    // возьмут предыдущее допустимое объявление.
+    card.style.cssText =
+      'max-width:420px;width:100%;margin:0;' +
+      'max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);' +
+      'overflow-y:auto;-webkit-overflow-scrolling:touch';
 
     const title = document.createElement('h2');
     title.textContent = forced ? 'Смена пароля по умолчанию' : 'Смена пароля';
