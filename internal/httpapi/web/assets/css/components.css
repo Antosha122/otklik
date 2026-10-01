@@ -537,49 +537,93 @@ pre.raw {
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 10px 12px;
   flex-wrap: wrap;
+  margin: 16px 0 8px;
 }
 
-.panel-head h2 {
-  margin: 0;
-  flex: 1;
-  min-width: 200px;
+/* Заголовок карточки — без отступа сверху, чтобы кнопки рядом стояли ровно. */
+.card > .panel-head:first-child {
+  margin-top: 0;
 }
 
+.panel-head h2,
 .panel-head h3 {
-  margin: 16px 0 4px;
+  margin: 0;
   flex: 1;
   min-width: 160px;
 }
 
-.panel-head > button {
+.panel-head > button,
+.panel-head > .btnrow,
+.panel-head > .note {
   flex: none;
 }
 
-.filter-line {
+/* Единая строка фильтров: подпись над полем, все поля одной высоты —
+   кнопки и выпадающие списки всегда стоят по одной линии. */
+.filters {
   display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
-  width: 100%;
+  align-items: flex-end;
+  gap: 10px 12px;
+  margin: 10px 0 6px;
 }
 
-.filter-line label {
+.filters .f {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.filters .f > label {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+
+.filters select,
+.filters input {
+  width: auto;
+  min-height: 46px;
+  padding: 9px 12px;
+  font-size: 15px;
+}
+
+.filters select { min-width: 150px; }
+.filters input[type=date] { min-width: 138px; }
+
+/* Слитная группа кнопок-периодов (7 / 30 дней / всё время). */
+.seg {
+  display: inline-flex;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: #fff;
+}
+
+.seg button {
+  width: auto;
+  min-height: 46px;
   margin: 0;
-  flex: none;
+  padding: 8px 14px;
+  border: 0;
+  border-right: 1.5px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--mut);
+  font-size: 14px;
 }
 
-.filter-line select {
-  flex: 1;
-  min-width: 170px;
-  width: auto;
+.seg button:last-child { border-right: 0; }
+
+.seg button:hover {
+  color: var(--acc);
+  background: var(--acc-soft);
 }
 
-.filter-line input[type=date] {
-  flex: 1;
-  min-width: 130px;
-  width: auto;
+.seg button.on {
+  color: var(--acc);
+  background: var(--acc-soft);
 }
 
 .act-line {

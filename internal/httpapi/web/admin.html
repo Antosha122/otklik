@@ -36,12 +36,14 @@
           <button class="ghost small" data-action="reload-stats">Обновить</button>
         </div>
       </div>
-      <div class="filter-line">
-        <label for="adFrom">Период с</label><input type="date" id="adFrom">
-        <label for="adTo">по</label><input type="date" id="adTo">
-        <button class="ghost small" data-action="stats-period" data-arg="7">7 дней</button>
-        <button class="ghost small" data-action="stats-period" data-arg="30">30 дней</button>
-        <button class="ghost small" data-action="stats-period" data-arg="all">всё время</button>
+      <div class="filters">
+        <div class="f"><label for="adFrom">Период с</label><input type="date" id="adFrom"></div>
+        <div class="f"><label for="adTo">по</label><input type="date" id="adTo"></div>
+        <div class="seg" role="group" aria-label="Быстрый выбор периода">
+          <button type="button" data-action="stats-period" data-arg="7">7 дней</button>
+          <button type="button" data-action="stats-period" data-arg="30">30 дней</button>
+          <button type="button" data-action="stats-period" data-arg="all">всё время</button>
+        </div>
       </div>
       <div id="adKpi"></div>
       <div class="chart-grid">
@@ -58,9 +60,10 @@
         <h3>Все обращения</h3>
         <button class="ghost small" data-action="reload-admin-appeals">Обновить</button>
       </div>
-      <div class="filter-line">
-        <label for="adFilterStatus">Статус</label>
-        <select id="adFilterStatus">
+      <div class="filters">
+        <div class="f">
+          <label for="adFilterStatus">Статус</label>
+          <select id="adFilterStatus">
           <option value="">любой статус</option>
           <option value="new">новое</option>
           <option value="assigned">назначено</option>
@@ -71,11 +74,12 @@
           <option value="completed">завершено</option>
           <option value="rejected">отклонено</option>
           <option value="closed_no_response">закрыто без ответа</option>
-        </select>
+          </select>
+        </div>
       </div>
       <div id="adAppeals"></div>
       <hr class="divider">
-      <h3>Пользователи</h3>
+      <div class="panel-head"><h3>Пользователи</h3></div>
       <div class="row">
         <div><label>Логин</label><input type="text" id="nuLogin" autocapitalize="none"></div>
         <div><label>Пароль</label><input type="password" id="nuPass"></div>
@@ -85,7 +89,7 @@
       <div class="form-foot"><button class="act small" data-action="admin-create-user">Создать</button></div>
       <div id="adUsers"></div>
       <hr class="divider">
-      <h3>Категории</h3>
+      <div class="panel-head"><h3>Категории</h3></div>
       <div class="row">
         <div><label>Название</label><input type="text" id="ncName"></div>
         <div><label>Группа</label><select id="ncGroup"><option value="psychologists">психолог</option><option value="conflictologists">конфликтолог</option><option value="lawyers">юрист</option><option value="social_pedagogues">социальный педагог</option></select></div>
@@ -94,7 +98,7 @@
       <div class="form-foot"><button class="act small" data-action="admin-create-category">Создать</button></div>
       <div id="adCats"></div>
       <hr class="divider">
-      <h3>Маршрутизация</h3>
+      <div class="panel-head"><h3>Маршрутизация</h3></div>
       <div class="row">
         <div><label>Лимит активных обращений на специалиста</label><input type="number" id="adLimit" min="1" max="100"></div>
         <div><label>Лимит возвратов заявителем</label><input type="number" id="adMaxReturns" min="0" max="10"></div>

@@ -31,8 +31,11 @@
     <div id="exPanel">
       <div class="panel-head">
         <h3>Мои обращения</h3>
-        <div class="filter-line">
-          <label>Статус</label>
+        <button class="ghost small" data-action="reload-expert">Обновить</button>
+      </div>
+      <div class="filters">
+        <div class="f">
+          <label for="exFilterStatus">Статус</label>
           <select id="exFilterStatus">
             <option value="">любой статус</option>
             <option value="assigned">назначено</option><option value="in_progress">в работе</option>
@@ -40,15 +43,18 @@
             <option value="answer_ready">готов ответ</option><option value="completed">завершено</option>
             <option value="returned">возвращено</option>
           </select>
-          <label>Приоритет</label>
+        </div>
+        <div class="f">
+          <label for="exFilterPriority">Приоритет</label>
           <select id="exFilterPriority">
             <option value="">любой</option>
             <option value="low">низкий</option><option value="normal">обычный</option>
             <option value="urgent">срочный</option>
           </select>
-          <label>Категория</label>
+        </div>
+        <div class="f">
+          <label for="exFilterCategory">Категория</label>
           <select id="exFilterCategory"><option value="">любая</option></select>
-          <button class="ghost small" data-action="reload-expert">Обновить</button>
         </div>
       </div>
       <div id="exList"></div>

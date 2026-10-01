@@ -13,6 +13,12 @@ let adPage = 1;
 
 const fmtNum = (v, suffix) => (v == null ? '—' : (Math.round(v * 10) / 10) + (suffix || ''));
 
+// Подсветка активной кнопки быстрых периодов (null — сброс, даты введены вручную).
+function markPeriod(arg) {
+  document.querySelectorAll('.seg button[data-action="stats-period"]')
+    .forEach((b) => b.classList.toggle('on', b.dataset.arg === arg));
+}
+
 // Быстрые периоды: N дней назад … сегодня; «всё время» очищает поля.
 function setQuickPeriod(arg) {
   const to = $('adTo'), from = $('adFrom');
@@ -24,6 +30,7 @@ function setQuickPeriod(arg) {
     d.setDate(d.getDate() - (Number(arg) - 1));
     from.value = d.toISOString().slice(0, 10);
   }
+  markPeriod(arg);
   loadStats();
 }
 
@@ -211,6 +218,6 @@ export function bindAdminFilters() {
   if ($('adFilterStatus')) {
     $('adFilterStatus').addEventListener('change', () => { adPage = 1; loadAdminAppeals(); });
   }
-  if ($('adFrom')) $('adFrom').addEventListener('change', loadStats);
-  if ($('adTo')) $('adTo').addEventListener('change', loadStats);
+  if ($('adFrom')) $('adFrom').addEventListener('change', () => { markPeriod(null); loadStats(); });
+  if ($('adTo')) $('adTo').addEventListener('change', () => { markPeriod(null); loadStats(); });
 }

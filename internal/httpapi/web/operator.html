@@ -38,8 +38,11 @@
       <hr class="divider">
       <div class="panel-head">
         <h3>Все обращения</h3>
-        <div class="filter-line">
-          <label>Фильтр по статусу</label>
+        <button class="ghost small" data-action="reload-op-all">Обновить</button>
+      </div>
+      <div class="filters">
+        <div class="f">
+          <label for="opFilterStatus">Статус</label>
           <select id="opFilterStatus">
             <option value="active">активные</option>
             <option value="distributed">распределённые (контроль)</option>
@@ -50,7 +53,6 @@
             <option value="completed">завершено</option><option value="rejected">отклонено</option>
             <option value="closed_no_response">закрыто без ответа</option>
           </select>
-          <button class="ghost small" data-action="reload-op-all">Обновить</button>
         </div>
       </div>
       <div id="opAll"></div>
