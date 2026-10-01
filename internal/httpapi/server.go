@@ -59,7 +59,9 @@ func securityHeaders(cfg config.Config) func(http.Handler) http.Handler {
 func baseRouter(cfg config.Config) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// RealIP сознательно не включаем: он слепо верит X-Forwarded-For, а тот
+	// подделывается клиентом. Адрес для рейт-лимитов считает clientIP —
+	// с доверием только приватным прокси (Caddy в docker-сети).
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders(cfg))
 	return r
@@ -300,13 +302,46 @@ func (s *Server) requireRole(roles ...domain.Role) func(http.Handler) http.Handl
 	}
 }
 
+// rlMaxKeys — верхняя граница числа ключей рейт-лимитера: защита памяти от
+// атаки с ротацией адресов (карта не может расти бесконечно).
+const rlMaxKeys = 1 << 16
+
 type rateLimiter struct {
 	mu   sync.Mutex
 	hits map[string][]time.Time
 }
 
 func newRateLimiter() *rateLimiter {
-	return &rateLimiter{hits: map[string][]time.Time{}}
+	rl := &rateLimiter{hits: map[string][]time.Time{}}
+	go rl.sweeper()
+	return rl
+}
+
+// sweeper периодически удаляет «остывшие» ключи, по которым давно не было
+// обращений. Без него карта росла бы неограниченно на пуле меняющихся IP.
+func (rl *rateLimiter) sweeper() {
+	t := time.NewTicker(10 * time.Minute)
+	defer t.Stop()
+	for range t.C {
+		rl.sweep(time.Hour)
+	}
+}
+
+func (rl *rateLimiter) sweep(window time.Duration) {
+	now := time.Now()
+	for k, v := range rl.hits {
+		fresh := v[:0]
+		for _, ts := range v {
+			if now.Sub(ts) < window {
+				fresh = append(fresh, ts)
+			}
+		}
+		if len(fresh) == 0 {
+			delete(rl.hits, k)
+		} else {
+			rl.hits[k] = fresh
+		}
+	}
 }
 
 func (rl *rateLimiter) allow(key string, n int, window time.Duration) bool {
@@ -326,6 +361,10 @@ func (rl *rateLimiter) allow(key string, n int, window time.Duration) bool {
 		rl.hits[key] = kept
 		return false
 	}
+	// Новый ключ при исчерпанном лимите ключей не заводим (sweeper подчистит).
+	if _, exists := rl.hits[key]; !exists && len(rl.hits) >= rlMaxKeys {
+		return false
+	}
 	rl.hits[key] = append(kept, now)
 	return true
 }
@@ -338,12 +377,47 @@ func (rl *rateLimiter) reset(key string) {
 	delete(rl.hits, key)
 }
 
+// clientIP возвращает адрес клиента для рейт-лимитов. Приложение стоит за
+// Caddy в закрытой docker-сети, поэтому X-Forwarded-For учитывается только
+// когда соединение пришло от приватного/loopback-адреса (то есть от нашего
+// прокси). Запрос «напрямую из интернета» с собственным XFF доверия не имеет —
+// иначе злоумышленник подменял бы заголовок и обходил лимиты перебора.
+// Берём последний элемент списка: его дописал доверенный прокси (клиент
+// контролирует только начало списка).
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	remote := remoteAddrHost(r.RemoteAddr)
+	if !isTrustedProxyAddr(remote) {
+		return remote
+	}
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return remote
+	}
+	parts := strings.Split(xff, ",")
+	last := strings.TrimSpace(parts[len(parts)-1])
+	if host, _, err := net.SplitHostPort(last); err == nil {
+		last = host
+	}
+	if net.ParseIP(last) == nil {
+		return remote
+	}
+	return last
+}
+
+func remoteAddrHost(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return r.RemoteAddr
+		return addr
 	}
 	return host
+}
+
+func isTrustedProxyAddr(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
 
 type errorResp struct {
