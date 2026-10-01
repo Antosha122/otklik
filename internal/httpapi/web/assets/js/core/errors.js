@@ -90,6 +90,7 @@ const SERVER_ERRORS_RU = {
   'specialist_group must be psychologists, conflictologists, lawyers or social_pedagogues': 'Группа специалистов указана неверно',
   'user id is invalid': 'Пользователь указан неверно',
   'category name length must be 3..100': 'Название категории должно быть от 3 до 100 символов',
+  'cross-origin request rejected': 'Запрос отклонён: это действие доступно только с сайта Отклик',
 };
 
 // Фолбэк по HTTP-коду: когда тело без текста ошибки либо сообщение не из словаря.

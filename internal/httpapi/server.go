@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,54 @@ func securityHeaders(cfg config.Config) func(http.Handler) http.Handler {
 	}
 }
 
+// sameOrigin — защита от CSRF для cookie-аутентификации. Браузер на
+// cross-site запросе обязан прислать Origin (или Referer): сверяем его хост
+// с хостом запроса. Запросы без Origin (curl, мониторинг, тесты) проходят —
+// HttpOnly-кука всё равно не покидает сайт, аbearer-токенов больше нет.
+func sameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			if ref := r.Header.Get("Referer"); ref != "" {
+				if u, err := url.Parse(ref); err == nil {
+					origin = u.Scheme + "://" + u.Host
+				}
+			}
+		}
+		if origin == "" {
+			next.ServeHTTP(w, r) // небраузерный клиент
+			return
+		}
+		u, err := url.Parse(origin)
+		if err != nil || !sameHost(u.Host, r.Host) {
+			writeJSON(w, http.StatusForbidden, errorResp{"cross-origin request rejected"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sameHost сравнивает хосты, не обращая внимания на порты по умолчанию
+// (example.com и example.com:443 за TLS-прокси — один и тот же источник).
+func sameHost(a, b string) bool {
+	norm := func(h string) string {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if host, port, err := net.SplitHostPort(h); err == nil && port != "" {
+			if port == "80" || port == "443" {
+				return host
+			}
+			return host + ":" + port
+		}
+		return h
+	}
+	return norm(a) == norm(b)
+}
+
 func baseRouter(cfg config.Config) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -63,6 +112,7 @@ func baseRouter(cfg config.Config) *chi.Mux {
 	// подделывается клиентом. Адрес для рейт-лимитов считает clientIP —
 	// с доверием только приватным прокси (Caddy в docker-сети).
 	r.Use(middleware.Recoverer)
+	r.Use(sameOrigin)
 	r.Use(securityHeaders(cfg))
 	return r
 }

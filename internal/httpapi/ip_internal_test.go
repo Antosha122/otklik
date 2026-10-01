@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
@@ -56,6 +57,46 @@ func TestRateLimiterAllowAndSweep(t *testing.T) {
 	rl.mu.Unlock()
 	if exists {
 		t.Fatal("sweep не удалил остывший ключ")
+	}
+}
+
+func TestSameOriginMiddleware(t *testing.T) {
+	h := sameOrigin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	do := func(method, origin, referer string) int {
+		r := httptest.NewRequest(method, "/api/auth/login", nil)
+		r.Host = "example.org"
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if referer != "" {
+			r.Header.Set("Referer", referer)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if got := do(http.MethodGet, "https://evil.example", ""); got != http.StatusOK {
+		t.Errorf("GET с чужим Origin: код %d, want 200 (мутацией GET не является)", got)
+	}
+	if got := do(http.MethodPost, "", ""); got != http.StatusOK {
+		t.Errorf("POST без Origin: код %d, want 200 (небраузерный клиент)", got)
+	}
+	if got := do(http.MethodPost, "https://example.org", ""); got != http.StatusOK {
+		t.Errorf("POST со своим Origin: код %d, want 200", got)
+	}
+	if got := do(http.MethodPost, "https://example.org:443", ""); got != http.StatusOK {
+		t.Errorf("POST Origin с портом 443: код %d, want 200", got)
+	}
+	if got := do(http.MethodPost, "https://evil.example", ""); got != http.StatusForbidden {
+		t.Errorf("POST с чужим Origin: код %d, want 403", got)
+	}
+	if got := do(http.MethodPost, "", "https://evil.example/page"); got != http.StatusForbidden {
+		t.Errorf("POST с чужим Referer: код %d, want 403", got)
+	}
+	if got := do(http.MethodPost, "null", ""); got != http.StatusForbidden {
+		t.Errorf("POST c Origin: null: код %d, want 403", got)
 	}
 }
 
