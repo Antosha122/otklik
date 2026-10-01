@@ -3,8 +3,12 @@ import { api } from '../core/api.js';
 import { ruStatus, ruRole, ruGroup, ruAppType } from '../core/i18n.js';
 import { registerActions } from '../core/actions.js';
 import { loadCategories } from '../categories.js';
+import { pagerHTML } from './lists.js';
 
 const shortId = (s) => (s ? String(s).slice(0, 8) : '—');
+
+// Текущая страница списка «Все обращения» на панели админа.
+let adPage = 1;
 
 export async function loadStats() {
   try {
@@ -48,14 +52,18 @@ export async function loadStats() {
 
 export async function loadAdminAppeals() {
   try {
-    const list = (await api('GET', '/api/admin/appeals')).appeals || [];
-    $('adAppeals').innerHTML = list.map((a) =>
-      `<div class="item" data-action="open-detail" data-arg="${esc(a.id)}">
+    const r = await api('GET', '/api/admin/appeals?page=' + adPage);
+    const list = r.appeals || [];
+    $('adAppeals').innerHTML = (list.length
+      ? list.map((a) =>
+        `<div class="item" data-action="open-detail" data-arg="${esc(a.id)}">
         <div class="l1"><span class="cat">${esc(a.category_name || 'Свободный текст')}</span>${badge(a.status, ruStatus(a.status))}
         ${a.no_expert_in_group ? badge('crisis', 'нет специалистов группы') : ''}
         ${a.group_overloaded ? badge('transfer', 'группа перегружена') : ''}</div>
         <div class="l2"><span>#${shortId(a.id)}</span><span>${fmtTime(a.created_at)}</span></div>
-      </div>`).join('') || '<div class="note" style="margin-top:8px">пусто</div>';
+      </div>`).join('')
+      : '<div class="note" style="margin-top:8px">пусто</div>') +
+      pagerHTML('admin', r.page, r.total_pages);
   } catch (e) { $('adAppeals').innerHTML = '<div class="note">' + esc(e.message) + '</div>'; }
 }
 
@@ -153,7 +161,8 @@ export async function loadComplaints() {
 }
 
 registerActions({
-  'reload-admin-appeals': loadAdminAppeals,
+  'reload-admin-appeals': () => { adPage = 1; loadAdminAppeals(); },
+  'pg-admin': (p) => { adPage = Math.max(1, Number(p) || 1); loadAdminAppeals(); },
   'admin-save-settings': adminSaveSettings,
   'admin-toggle-user': adminToggleUser,
   'admin-create-user': adminCreateUser,

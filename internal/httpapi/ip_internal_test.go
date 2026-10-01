@@ -60,6 +60,26 @@ func TestRateLimiterAllowAndSweep(t *testing.T) {
 	}
 }
 
+func TestParsePageQuery(t *testing.T) {
+	mk := func(url string) *http.Request {
+		r := httptest.NewRequest("GET", url, nil)
+		return r
+	}
+	pq, pg, _, err := parsePageQuery(mk("/api/operator/appeals"))
+	if err != nil || pq.Page != 1 || pq.PerPage != defaultPerPage || pg.Limit != defaultPerPage || pg.Offset != 0 {
+		t.Fatalf("defaults: pq=%+v pg=%+v err=%v", pq, pg, err)
+	}
+	pq, pg, _, err = parsePageQuery(mk("/api/operator/appeals?page=3&per_page=50"))
+	if err != nil || pq.Page != 3 || pg.Limit != 50 || pg.Offset != 100 {
+		t.Fatalf("page=3&per_page=50: pq=%+v pg=%+v err=%v", pq, pg, err)
+	}
+	for _, bad := range []string{"page=0", "page=-1", "page=abc", "per_page=0", "per_page=101", "per_page=xx"} {
+		if _, _, _, err := parsePageQuery(mk("/x?" + bad)); err == nil {
+			t.Errorf("%s: ожидалась ошибка", bad)
+		}
+	}
+}
+
 func TestSameOriginMiddleware(t *testing.T) {
 	h := sameOrigin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -100,12 +100,17 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleAdminAppeals(w http.ResponseWriter, r *http.Request) {
-	items, err := s.st.ListAppealsMeta(r.Context())
+	pq, pg, _, err := parsePageQuery(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResp{"page and per_page must be positive integers (per_page max 100)"})
+		return
+	}
+	items, total, err := s.st.ListAppealsMeta(r.Context(), pg)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
+	writeJSON(w, http.StatusOK, pagedBody("appeals", items, pq, total))
 }
 
 func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {

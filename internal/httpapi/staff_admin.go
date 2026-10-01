@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"otklik/internal/domain"
+	"otklik/internal/store"
 )
 
 type adminStatusReq struct {
@@ -151,7 +152,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if p.Role == domain.RoleExpert {
-		items, err := s.st.ListExpertAppeals(r.Context(), p.UserID, "", "", "")
+		items, _, err := s.st.ListExpertAppeals(r.Context(), p.UserID, "", "", "", store.Page{})
 		if err != nil {
 			writeErr(w, r, err)
 			return
@@ -164,7 +165,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 	} else if p.Role == domain.RoleOperator {
 		// Оператор выгружает только обращения, с которыми работал сам:
 		// назначал специалиста или отклонял, — а не весь массив программы.
-		items, err := s.st.ListOperatorWorkedAppealsMeta(r.Context(), p.UserID)
+		items, _, err := s.st.ListOperatorWorkedAppealsMeta(r.Context(), p.UserID, store.Page{})
 		if err != nil {
 			writeErr(w, r, err)
 			return
@@ -175,7 +176,7 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 				strconv.Itoa(it.ReturnCount), it.CreatedAt.Format("2006-01-02 15:04"), it.UpdatedAt.Format("2006-01-02 15:04"))
 		}
 	} else {
-		items, err := s.st.ListAppealsMeta(r.Context())
+		items, _, err := s.st.ListAppealsMeta(r.Context(), store.Page{})
 		if err != nil {
 			writeErr(w, r, err)
 			return

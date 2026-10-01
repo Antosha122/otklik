@@ -215,22 +215,32 @@ func (s *Server) handleOperatorQueue(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleOperatorAppeals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	items, err := s.st.ListOperatorAppeals(r.Context(), q.Get("status"))
+	pq, pg, _, err := parsePageQuery(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResp{"page and per_page must be positive integers (per_page max 100)"})
+		return
+	}
+	items, total, err := s.st.ListOperatorAppeals(r.Context(), q.Get("status"), pg)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
+	writeJSON(w, http.StatusOK, pagedBody("appeals", items, pq, total))
 }
 
 func (s *Server) handleExpertAppeals(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	q := r.URL.Query()
-	items, err := s.st.ListExpertAppeals(r.Context(), p.UserID,
-		q.Get("status"), q.Get("category"), q.Get("priority"))
+	pq, pg, _, err := parsePageQuery(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResp{"page and per_page must be positive integers (per_page max 100)"})
+		return
+	}
+	items, total, err := s.st.ListExpertAppeals(r.Context(), p.UserID,
+		q.Get("status"), q.Get("category"), q.Get("priority"), pg)
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": items})
+	writeJSON(w, http.StatusOK, pagedBody("appeals", items, pq, total))
 }

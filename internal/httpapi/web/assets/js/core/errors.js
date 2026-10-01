@@ -91,6 +91,7 @@ const SERVER_ERRORS_RU = {
   'user id is invalid': 'Пользователь указан неверно',
   'category name length must be 3..100': 'Название категории должно быть от 3 до 100 символов',
   'cross-origin request rejected': 'Запрос отклонён: это действие доступно только с сайта Отклик',
+  'page and per_page must be positive integers (per_page max 100)': 'Неверные параметры постраничной выдачи (per_page не больше 100)',
 };
 
 // Фолбэк по HTTP-коду: когда тело без текста ошибки либо сообщение не из словаря.

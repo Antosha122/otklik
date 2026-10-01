@@ -103,8 +103,30 @@ type OperatorListItem struct {
 	NoReplySec        *int      `json:"no_reply_sec"`
 }
 
-func (st *Store) ListOperatorAppeals(ctx context.Context, status string) ([]OperatorListItem, error) {
-	rows, err := st.DB.QueryContext(ctx, `
+// Page — параметры постраничной выдачи списков. Limit == 0 означает
+// «без пагинации» (CSV-выгрузка и прочие полные выборки).
+type Page struct {
+	Limit  int
+	Offset int
+}
+
+func applyPage(q string, pg Page) string {
+	if pg.Limit <= 0 {
+		return q
+	}
+	return fmt.Sprintf("%s LIMIT %d OFFSET %d", q, pg.Limit, pg.Offset)
+}
+
+// countRows считает общее число строк выдачи — фронтенду нужны total_pages.
+// Исходный запрос используется как подвыборка, ORDER BY внутри допустим.
+func (st *Store) countRows(ctx context.Context, q string, args []any) (int, error) {
+	var total int
+	err := st.DB.QueryRowContext(ctx, "SELECT count(*) FROM ("+q+") _page", args...).Scan(&total)
+	return total, err
+}
+
+func (st *Store) ListOperatorAppeals(ctx context.Context, status string, pg Page) ([]OperatorListItem, int, error) {
+	q := `
 		WITH la AS (
 			SELECT appeal_id,
 			       max(created_at) FILTER (WHERE author_type = 'applicant') AS last_app,
@@ -127,10 +149,15 @@ func (st *Store) ListOperatorAppeals(ctx context.Context, status string) ([]Oper
 		       OR ($1 = 'distributed' AND a.assigned_expert_id IS NOT NULL
 		           AND a.status IN ('assigned', 'in_progress', 'needs_clarification', 'answer_ready')))
 		ORDER BY (EXTRACT(EPOCH FROM (now() - la.last_app))::int > $2) DESC NULLS LAST,
-		         a.updated_at DESC`,
-		status, domain.ResponseOverdueHours*3600)
+		         a.updated_at DESC`
+	args := []any{status, domain.ResponseOverdueHours * 3600}
+	total, err := st.countRows(ctx, q, args)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg), args...)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []OperatorListItem
@@ -140,7 +167,7 @@ func (st *Store) ListOperatorAppeals(ctx context.Context, status string) ([]Oper
 		if err := rows.Scan(&it.ID, &it.ApplicantType, &it.CategoryName, &it.Status,
 			&it.Priority, &it.CrisisDetected, &it.TransferRequested, &it.AssignedExpert,
 			&it.ReturnCount, &it.CreatedAt, &it.UpdatedAt, &noReply); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if noReply.Valid {
 			v := int(noReply.Int64)
@@ -148,7 +175,7 @@ func (st *Store) ListOperatorAppeals(ctx context.Context, status string) ([]Oper
 		}
 		out = append(out, it)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 type ExpertListItem struct {
@@ -164,8 +191,8 @@ type ExpertListItem struct {
 }
 
 func (st *Store) ListExpertAppeals(ctx context.Context, expertID uuid.UUID,
-	status, category, priority string) ([]ExpertListItem, error) {
-	rows, err := st.DB.QueryContext(ctx, `
+	status, category, priority string, pg Page) ([]ExpertListItem, int, error) {
+	q := `
 		SELECT a.id, a.applicant_type, c.name, a.status, a.priority, a.crisis_detected,
 		       a.return_count, a.created_at, a.updated_at
 		FROM appeals a
@@ -175,10 +202,15 @@ func (st *Store) ListExpertAppeals(ctx context.Context, expertID uuid.UUID,
 		  AND ($2 = '' OR a.status = $2)
 		  AND ($3 = '' OR c.name = $3)
 		  AND ($4 = '' OR a.priority = $4)
-		ORDER BY (a.priority = 'urgent') DESC, a.created_at ASC`,
-		expertID, status, category, priority)
+		ORDER BY (a.priority = 'urgent') DESC, a.created_at ASC`
+	args := []any{expertID, status, category, priority}
+	total, err := st.countRows(ctx, q, args)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg), args...)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []ExpertListItem
@@ -186,11 +218,11 @@ func (st *Store) ListExpertAppeals(ctx context.Context, expertID uuid.UUID,
 		var it ExpertListItem
 		if err := rows.Scan(&it.ID, &it.ApplicantType, &it.CategoryName, &it.Status,
 			&it.Priority, &it.CrisisDetected, &it.ReturnCount, &it.CreatedAt, &it.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, it)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 type AdminAppealMeta struct {
@@ -215,16 +247,16 @@ type AdminAppealMeta struct {
 // работал: назначал специалиста (событие 'assign') или сам отклонял
 // (событие 'status' → 'rejected'). Обращения, просто прошедшие мимо него
 // в общей очереди, оператору не выгружаются.
-func (st *Store) ListOperatorWorkedAppealsMeta(ctx context.Context, userID uuid.UUID) ([]AdminAppealMeta, error) {
+func (st *Store) ListOperatorWorkedAppealsMeta(ctx context.Context, userID uuid.UUID, pg Page) ([]AdminAppealMeta, int, error) {
 	set, err := st.GetSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := st.DB.QueryContext(ctx, `
+	q := `
 		SELECT a.id, a.applicant_type, c.name, a.status, a.priority, a.crisis_detected,
 		       EXISTS (SELECT 1 FROM crisis_contacts cc WHERE cc.appeal_id = a.id),
 		       u.login, a.return_count, a.version, a.created_at, a.updated_at,
-		       `+fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit)+`
+		       ` + fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit) + `
 		FROM appeals a
 		LEFT JOIN categories c ON c.id = a.category_id
 		LEFT JOIN users u ON u.id = a.assigned_expert_id
@@ -234,9 +266,15 @@ func (st *Store) ListOperatorWorkedAppealsMeta(ctx context.Context, userID uuid.
 			  AND (e.event_type = 'assign'
 			       OR (e.event_type = 'status' AND e.new_value = 'rejected'))
 		)
-		ORDER BY a.created_at DESC`, userID)
+		ORDER BY a.created_at DESC`
+	args := []any{userID}
+	total, err := st.countRows(ctx, q, args)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg), args...)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []AdminAppealMeta
@@ -246,29 +284,34 @@ func (st *Store) ListOperatorWorkedAppealsMeta(ctx context.Context, userID uuid.
 			&m.Priority, &m.CrisisDetected, &m.HasCrisisContact, &m.ExpertLogin,
 			&m.ReturnCount, &m.Version, &m.CreatedAt, &m.UpdatedAt,
 			&m.RoutingGroup, &m.NoExpertInGroup, &m.GroupOverloaded); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
-func (st *Store) ListAppealsMeta(ctx context.Context) ([]AdminAppealMeta, error) {
+func (st *Store) ListAppealsMeta(ctx context.Context, pg Page) ([]AdminAppealMeta, int, error) {
 	set, err := st.GetSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := st.DB.QueryContext(ctx, `
+	q := `
 		SELECT a.id, a.applicant_type, c.name, a.status, a.priority, a.crisis_detected,
 		       EXISTS (SELECT 1 FROM crisis_contacts cc WHERE cc.appeal_id = a.id),
 		       u.login, a.return_count, a.version, a.created_at, a.updated_at,
-		       `+fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit)+`
+		       ` + fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit) + `
 		FROM appeals a
 		LEFT JOIN categories c ON c.id = a.category_id
 		LEFT JOIN users u ON u.id = a.assigned_expert_id
-		ORDER BY a.created_at DESC`)
+		ORDER BY a.created_at DESC`
+	total, err := st.countRows(ctx, q, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg))
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []AdminAppealMeta
@@ -278,9 +321,9 @@ func (st *Store) ListAppealsMeta(ctx context.Context) ([]AdminAppealMeta, error)
 			&m.Priority, &m.CrisisDetected, &m.HasCrisisContact, &m.ExpertLogin,
 			&m.ReturnCount, &m.Version, &m.CreatedAt, &m.UpdatedAt,
 			&m.RoutingGroup, &m.NoExpertInGroup, &m.GroupOverloaded); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }

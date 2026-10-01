@@ -18,6 +18,21 @@ const fmtDur = (sec) => {
   return h > 0 ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${Math.max(1, m)} мин`;
 };
 
+// Состояние страниц списков: фильтры сбрасывают страницу на первую.
+let opAllPage = 1;
+let exPage = 1;
+
+// pagerHTML — блок «назад/вперёд» для постраничных списков (ключ pg-<name>
+// регистрируется в actions, data-arg — целевая страница).
+export function pagerHTML(name, page, totalPages) {
+  if (!totalPages || totalPages <= 1) return '';
+  return `<div class="btnrow" style="margin-top:8px">
+    <button class="ghost small" data-action="pg-${name}" data-arg="${page - 1}"${page <= 1 ? ' disabled' : ''}>← назад</button>
+    <span class="note">страница ${page} из ${totalPages}</span>
+    <button class="ghost small" data-action="pg-${name}" data-arg="${page + 1}"${page >= totalPages ? ' disabled' : ''}>вперёд →</button>
+  </div>`;
+}
+
 export async function loadQueue() {
   try {
     const q = (await api('GET', '/api/operator/queue')).appeals || [];
@@ -45,32 +60,40 @@ export async function loadQueue() {
 export async function loadOpAll() {
   try {
     const st = $('opFilterStatus').value;
-    const list = (await api('GET', '/api/operator/appeals' + (st ? '?status=' + st : ''))).appeals || [];
-    $('opAll').innerHTML = list.map((a) =>
-      appealItem(a, `<span>${esc(a.assigned_expert || 'не назначен')}</span><span>обновлено ${fmtTime(a.updated_at)}</span>` +
-        (a.no_reply_sec != null && a.no_reply_sec > 24 * 3600 ? badge('overdue', `⏱ без ответа ${fmtDur(a.no_reply_sec)}`) : ''))
-    ).join('') || '<div class="note" style="margin-top:8px">нет обращений</div>';
+    const qs = new URLSearchParams({ page: String(opAllPage) });
+    if (st) qs.set('status', st);
+    const r = await api('GET', '/api/operator/appeals?' + qs.toString());
+    const list = r.appeals || [];
+    $('opAll').innerHTML = (list.length
+      ? list.map((a) =>
+        appealItem(a, `<span>${esc(a.assigned_expert || 'не назначен')}</span><span>обновлено ${fmtTime(a.updated_at)}</span>` +
+          (a.no_reply_sec != null && a.no_reply_sec > 24 * 3600 ? badge('overdue', `⏱ без ответа ${fmtDur(a.no_reply_sec)}`) : ''))).join('')
+      : '<div class="note" style="margin-top:8px">нет обращений</div>') +
+      pagerHTML('op-all', r.page, r.total_pages);
   } catch (e) { toast(e.message); }
 }
 
 export async function loadExpert() {
   try {
-    const qs = new URLSearchParams();
+    const qs = new URLSearchParams({ page: String(exPage) });
     if ($('exFilterStatus').value) qs.set('status', $('exFilterStatus').value);
     if ($('exFilterPriority').value) qs.set('priority', $('exFilterPriority').value);
     if ($('exFilterCategory').value) qs.set('category', $('exFilterCategory').value);
-    const q = qs.toString();
-    const list = (await api('GET', '/api/expert/appeals' + (q ? '?' + q : ''))).appeals || [];
-    $('exList').innerHTML = list.map((a) => appealItem(a)).join('') || '<div class="note" style="margin-top:8px">нет обращений</div>';
+    const r = await api('GET', '/api/expert/appeals?' + qs.toString());
+    const list = r.appeals || [];
+    $('exList').innerHTML = (list.length
+      ? list.map((a) => appealItem(a)).join('')
+      : '<div class="note" style="margin-top:8px">нет обращений</div>') +
+      pagerHTML('expert', r.page, r.total_pages);
   } catch (e) { toast(e.message); }
 }
 
 export function bindListFilters() {
   // Фильтры живут на разных страницах — вешаем только те, что есть в DOM.
-  if ($('opFilterStatus')) $('opFilterStatus').addEventListener('change', loadOpAll);
+  if ($('opFilterStatus')) $('opFilterStatus').addEventListener('change', () => { opAllPage = 1; loadOpAll(); });
   const exFilters = ['exFilterStatus', 'exFilterPriority', 'exFilterCategory'];
   if (exFilters.some((id) => $(id))) {
-    exFilters.forEach((id) => { if ($(id)) $(id).addEventListener('change', loadExpert); });
+    exFilters.forEach((id) => { if ($(id)) $(id).addEventListener('change', () => { exPage = 1; loadExpert(); }); });
   }
   if ($('exFilterCategory')) {
     api('GET', '/api/categories').then((r) => {
@@ -114,9 +137,11 @@ export async function loadOpComplaints() {
 registerActions({
   'open-detail': (id) => { location.href = '/detail/' + encodeURIComponent(id); },
   'reload-queue': loadQueue,
-  'reload-op-all': loadOpAll,
-  'reload-expert': loadExpert,
+  'reload-op-all': () => { opAllPage = 1; loadOpAll(); },
+  'reload-expert': () => { exPage = 1; loadExpert(); },
   'reload-my-stats': loadMyStats,
   'reload-op-complaints': loadOpComplaints,
   'export-csv': exportCsv,
+  'pg-op-all': (p) => { opAllPage = Math.max(1, Number(p) || 1); loadOpAll(); },
+  'pg-expert': (p) => { exPage = Math.max(1, Number(p) || 1); loadExpert(); },
 });
