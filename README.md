@@ -12,10 +12,10 @@ https://burkinanton.ru/
 Если вы склонировали репозиторий, то всё, что нужно сделать для запуска — это выполнить пару команд в терминале:
 
 ```bash
-git clone https://github.com/orenfsp/cup-trivium.git
+git clone https://github.com/Antosha122/otklik.git
 ```
 ```bash
-cd cup-trivium
+cd otklik
 ```
 ```bash
 cp .env.example .env
@@ -44,6 +44,52 @@ docker compose exec -T db psql -U otklik -d otklik -c "ALTER USER otklik WITH PA
 # затем впишите тот же пароль в POSTGRES_PASSWORD в .env и:
 docker compose up -d app
 ```
+
+---
+
+## Эксплуатация: бэкапы, хранение данных, логи, CI
+
+### Бэкапы и восстановление
+
+Четвёртый контейнер `db-backup` раз в сутки делает `pg_dump` в кастомном формате (`-Fc`, со сжатием) в volume `backups`, хранит последние `BACKUP_KEEP` копий (по умолчанию 14). Первый бэкап делается сразу при старте контейнера — так проще проверить, что всё работает:
+
+```bash
+docker compose ps db-backup                       # должен быть запущен
+docker compose exec db-backup ls -lh /backups    # список копий
+```
+
+Проверка восстановимости (обязательная часть регламента — делайте её хотя бы раз после развёртывания):
+
+```bash
+# копируем свежий бэкап и разворачиваем его в отдельную базу на том же сервере
+docker compose exec db-backup sh -c 'pg_dump -Fc otklik > /backups/verify.dump'
+docker compose exec -T db psql -U otklik -d postgres -c "CREATE DATABASE otklik_verify;"
+docker compose exec db-backup pg_restore -U otklik -d otklik_verify --no-owner /backups/verify.dump
+docker compose exec -T db psql -U otklik -d otklik_verify -c "SELECT count(*) FROM appeals;"
+docker compose exec -T db psql -U otklik -d postgres -c "DROP DATABASE otklik_verify;"
+```
+
+Полное восстановление из бэкапа (аккуратно: затирает текущую базу):
+
+```bash
+docker compose stop app
+docker compose exec db-backup pg_restore -U otklik -d otklik --clean /backups/otklik-ГГГГММДД-ЧЧММСС.dump
+docker compose start app
+```
+
+Бэкап-файлы лежат в docker volume на том же сервере. Для защиты от потери самого сервера периодически копируйте их наружу (например, `docker compose exec db-backup cat /backups/<файл> > локальная_копия.dump` или rsync volume на резервную машину).
+
+### Срок хранения данных (retention)
+
+Обращения содержат чувствительные данные детей, поэтому копиться вечно они не должны. Джанитор раз в час удаляет терминальные обращения (завершено / отклонено / закрыто без ответа), не обновлявшиеся дольше `RETENTION_DAYS` дней (по умолчанию 730), вместе с чатом, событиями, записями о вложениях и файлами вложений на диске. `RETENTION_DAYS=0` отключает удаление.
+
+### Логи
+
+Приложение пишет структурные логи в stdout в формате JSON (`LOG_FORMAT=text` для локальной отладки) — их собирает Docker, дальше любой лог-коллектор. Каждый запрос логируется с уникальным `request_id` (он же возвращается клиенту заголовком `X-Request-ID`), методом, путём, кодом, длительностью и адресом. Внутренние ошибки логируются с тем же `request_id` — по нему инцидент трассируется от жалобы пользователя до строки кода.
+
+### CI
+
+GitHub Actions (`.github/workflows/ci.yml`) на каждый push/pull_request: сборка и юнит-тесты Go, интеграционные тесты против чистого PostgreSQL 16 (сервис в раннере), тесты фронтенд-ядра на Node (`npm test`). Мерж без зелёного CI не имеет смысла.
 
 ---
 
@@ -103,6 +149,8 @@ docker compose up -d app
 - `ATTACHMENTS_DIR` — папка для файлов (по умолчанию `./data/attachments`)
 - `SESSION_TTL_MIN` — время жизни сессии в минутах (120)
 - `COOKIE_SECURE` — если `1`, то куки только по HTTPS (по умолчанию `1`; для локальной разработки без TLS — `0`)
+- `RETENTION_DAYS` — срок хранения завершённых обращений в днях (730; `0` — бессрочно)
+- `LOG_FORMAT` — формат логов: `json` (прод) или `text` (локальная отладка)
 - `SEED_DEFAULT_PWD` — пароль для демо-пользователей
 - `PUBLIC_SITE` — адрес публичного сайта для Caddy (заявители), по умолчанию `localhost`
 - `STAFF_SITE` — адрес служебного сайта для Caddy (сотрудники), по умолчанию `localhost:8443`
@@ -117,7 +165,10 @@ docker compose up -d app
 
 ## Безопасность
 
-- На все ответы (оба порта) ставятся заголовки: `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`. `Strict-Transport-Security` добавляется при `COOKIE_SECURE=1` (деплой за TLS-терминацией).
+- На все ответы (оба порта) ставятся заголовки: `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`. `Strict-Transport-Security` добавляется при `COOKIE_SECURE=1` (деплой за TLS-терминацией). Инлайн-скрипты не используются, поэтому CSP для скриптов — строгий `script-src 'self'`.
+- Защита от CSRF: все изменяющие запросы (POST/PUT/PATCH) с заголовком `Origin`/`Referer` проходят проверку same-origin; чужой источник получает `403`. Не-браузерные клиенты (curl, мониторинг) работают как раньше.
+- Аутентификация — только HttpOnly-куки (`SameSite=Lax`); bearer-токены не выдаются и не принимаются. Токены сессий и трек-номера хранятся в БД только как SHA-256-хеши.
+- Рейт-лимиты считают адрес клиента по `X-Forwarded-For` только от доверенных (приватных) прокси — Caddy в закрытой docker-сети; подделать заголовок «напрямую из интернета» и обойти лимиты перебора нельзя. Память рейт-лимитера ограничена (периодическая чистка + потолок числа ключей).
 - TLS-терминация — Caddy перед приложением: наружу торчат только 80/443/8443, порты приложения (8080/8081) и PostgreSQL (5433) привязаны к `127.0.0.1` хоста. Домены получают сертификат Let's Encrypt автоматически, голый IP — самоподписанный сертификат Caddy.
 - Сотрудник может сменить свой пароль: `POST /api/auth/password` с `current_password`/`new_password` (кнопка «Сменить пароль» в панелях). После смены все прочие сессии пользователя инвалидируются, текущая — остаётся.
 - Демо-пароль (`SEED_DEFAULT_PWD`) обязательно сменяется при первом входе: пока `must_change_password=true`, API сотрудника закрыт (`403`), фронт сам показывает диалог смены пароля.
@@ -144,9 +195,10 @@ docker compose up -d app
 - `/api/appeals/me/attachments` — управление вложениями
 
 Сотрудники (после логина через `/api/auth/login`):
-- Оператор: `/api/operator/queue` (очередь новых), `/api/operator/appeals` (список с фильтрами), а также действия над конкретной заявкой: назначение, приоритет, категория, отклонение, завершение, закрытие, возврат.
-- Эксперт: `/api/expert/appeals` (только его заявки), статусные действия (взять, уточнить, рекомендация, запрос передачи, соисполнители), чат и заметки.
-- Админ: `/api/admin/appeals`, `/api/admin/users`, `/api/admin/categories`, `/api/admin/complaints`, а также настройки маршрутизации (`/api/admin/settings`).
+- Оператор: `/api/operator/queue` (очередь новых), `/api/operator/appeals` (список с фильтрами и пагинацией `?page=&per_page=`), а также действия над конкретной заявкой: назначение, приоритет, категория, отклонение, завершение, закрытие, возврат, ревью кризисной пометки (`POST /api/appeals/{id}/crisis-flag` — снятие ложного срабатывания автодетекта с обязательной причиной, попадает в журнал событий).
+- Эксперт: `/api/expert/appeals` (только его заявки, с пагинацией), статусные действия (взять, уточнить, рекомендация, запрос передачи, соисполнители), чат и заметки.
+- Админ: `/api/admin/appeals` (с пагинацией), `/api/admin/users`, `/api/admin/categories`, `/api/admin/complaints`, а также настройки маршрутизации (`/api/admin/settings`).
+- Все списковые эндпоинты возвращают метаданные страниц: `page`, `per_page`, `total`, `total_pages` (по умолчанию 20 на странице, максимум 100). CSV-выгрузка всегда полная.
 - Для всех сотрудников: `/api/staff/experts` (список специалистов с нагрузкой), `/api/mystats` (персональная аналитика), `/api/export/appeals` (CSV-выгрузка; эксперт — только свои обращения, оператор — только те, где он назначал специалиста или отклонял, админ — все), `POST /api/auth/password` (смена своего пароля).
 - Также есть эндпоинты для присутствия (кто сейчас в карточке и печатает) — `/api/appeals/{id}/presence`, и для аудита — `/api/appeals/{id}/events`.
 
