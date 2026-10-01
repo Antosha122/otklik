@@ -192,6 +192,7 @@ func New(cfg config.Config, st *store.Store) http.Handler {
 	r.Get("/new", s.pageFor("applicant", "new.html"))       // подача обращения
 	r.Get("/track", s.pageFor("applicant", "track.html"))   // вход по трек-номеру
 	r.Get("/appeal", s.pageFor("applicant", "appeal.html")) // чат и статус обращения
+	r.Get("/sw.js", swHandler())                             // PWA заявителя: service worker с корня (scope "/")
 	r.Handle("/assets/*", assetsHandler())
 	r.Get("/api/categories", s.handlePublicCategories)
 	r.Get("/api/intake-questions", func(w http.ResponseWriter, _ *http.Request) {
