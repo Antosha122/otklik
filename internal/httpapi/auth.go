@@ -102,10 +102,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func bearerToken(r *http.Request) string {
-	h := r.Header.Get("Authorization")
-	if len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
-		return strings.TrimSpace(h[7:])
+// staffSessionToken достаёт токен сессии исключительно из HttpOnly-куки:
+// bearer-токены больше не выдаются и не принимаются.
+func staffSessionToken(r *http.Request) string {
+	if c, err := r.Cookie(staffCookie); err == nil && c.Value != "" {
+		return c.Value
 	}
 	return ""
 }
@@ -165,12 +166,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Смена пароля — повод выкинуть прочие сессии (другие вкладки/устройства).
-	currentHash := ""
-	if bt := bearerToken(r); bt != "" {
-		currentHash = hashToken(bt)
-	} else if c, err := r.Cookie(staffCookie); err == nil && c.Value != "" {
-		currentHash = hashToken(c.Value)
-	}
+	currentHash := hashToken(staffSessionToken(r))
 	if err := s.st.DeleteStaffSessionsForUser(r.Context(), p.UserID, currentHash); err != nil {
 		writeErr(w, err)
 		return
@@ -179,14 +175,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	tok := ""
-	if c, err := r.Cookie(staffCookie); err == nil && c.Value != "" {
-		tok = c.Value
-	}
-	if bt := bearerToken(r); bt != "" && tok == "" {
-		tok = bt
-	}
-	if tok != "" {
+	if tok := staffSessionToken(r); tok != "" {
 		_ = s.st.DeleteStaffSession(r.Context(), hashToken(tok))
 	}
 	s.clearCookie(w, staffCookie)

@@ -216,25 +216,13 @@ func (s *Server) authMW(allowStaff, allowApplicant bool) func(http.Handler) http
 			found := false
 
 			if allowStaff {
-				if bt := bearerToken(r); bt != "" {
-					hash := hashToken(bt)
+				if c, err := r.Cookie(staffCookie); err == nil && c.Value != "" {
+					hash := hashToken(c.Value)
 					userID, ok, err := s.st.GetStaffSession(r.Context(), hash)
 					if err == nil && ok {
 						if u, err := s.st.GetUserByID(r.Context(), userID); err == nil && u.Active {
 							p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login, MustChangePassword: u.MustChangePassword}
 							found = true
-						}
-					}
-				}
-				if !found {
-					if c, err := r.Cookie(staffCookie); err == nil && c.Value != "" {
-						hash := hashToken(c.Value)
-						userID, ok, err := s.st.GetStaffSession(r.Context(), hash)
-						if err == nil && ok {
-							if u, err := s.st.GetUserByID(r.Context(), userID); err == nil && u.Active {
-								p = domain.Principal{Role: domain.Role(u.Role), UserID: u.ID, Login: u.Login, MustChangePassword: u.MustChangePassword}
-								found = true
-							}
 						}
 					}
 				}
