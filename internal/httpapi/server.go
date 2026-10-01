@@ -313,7 +313,7 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 		r.Post("/return", s.handleReturnForRework)
 		r.Post("/contributors", s.handleAddContributor)
 		r.Post("/admin-status", s.handleAdminSetStatus)
-			r.Post("/crisis-flag", s.handleSetCrisisFlag)
+		r.Post("/crisis-flag", s.handleSetCrisisFlag)
 	})
 
 	return r

@@ -1,10 +1,9 @@
-import { $, esc, fmtTime, kv } from '../core/dom.js';
+import { $, esc, fmtTime, kv, toast } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { ruRole, ruGroup, ruStatus, ruPrio, ruEvent } from '../core/i18n.js';
 import { registerActions } from '../core/actions.js';
 import { roleHome } from './state.js';
 import { guardPage } from './index.js';
-import './lists.js'; // side-effect: регистрирует export-csv и пагинацию списков
 
 // Значение события журнала локализуем по типу: статус/приоритет — словарями.
 function eventValue(e) {
@@ -63,13 +62,43 @@ async function loadProfile() {
   }
 }
 
+// Выгрузка CSV с фильтрами. Охват зависит от роли:
+// админ — все обращения, оператор — где он назначал/отклонял, специалист — свои.
+function exportCsv() {
+  const q = new URLSearchParams();
+  if ($('exFrom') && $('exFrom').value) q.set('from', $('exFrom').value);
+  if ($('exTo') && $('exTo').value) q.set('to', $('exTo').value);
+  if ($('exStatus') && $('exStatus').value) q.set('status', $('exStatus').value);
+  if ($('exPriority') && $('exPriority').value) q.set('priority', $('exPriority').value);
+  if ($('exGroup') && $('exGroup').value) q.set('group', $('exGroup').value);
+  if ($('exCrisis') && $('exCrisis').value) q.set('crisis', $('exCrisis').value);
+  const qs = q.toString();
+  window.open('/api/export/appeals' + (qs ? '?' + qs : ''), '_blank');
+  toast('Выгрузка сформирована — файл скачивается');
+}
+
+// Подсказка об охвате выгрузки: фильтры уточняют, роль ограничивает.
+function exportScopeHint(role) {
+  const scope = role === 'admin'
+    ? 'выгружаются все обращения программы'
+    : role === 'operator'
+      ? 'выгружаются только обращения, с которыми вы работали (назначали специалиста или отклоняли)'
+      : 'выгружаются только ваши обращения';
+  const el = $('exScope');
+  if (el) el.textContent = 'Охват: ' + scope + '. Файл откроется в Excel (UTF-8, разделитель — запятая).';
+  // Специалисту фильтр специальности не нужен — его обращения и так одной группы.
+  const g = $('exGroup');
+  if (g && role === 'expert') g.disabled = true;
+}
+
 // Страница /profile — личный кабинет любого сотрудника (оператор/эксперт/админ).
 export async function profileInit() {
   const me = await guardPage(['operator', 'expert', 'admin']);
   if (!me) return;
   const back = $('navHomeLink');
   if (back) back.href = roleHome(me.role);
+  exportScopeHint(me.role);
   await loadProfile();
 }
 
-registerActions({ 'reload-profile': loadProfile });
+registerActions({ 'reload-profile': loadProfile, 'export-csv': exportCsv });

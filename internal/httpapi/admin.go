@@ -105,7 +105,13 @@ func (s *Server) handleAdminAppeals(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResp{"page and per_page must be positive integers (per_page max 100)"})
 		return
 	}
-	items, total, err := s.st.ListAppealsMeta(r.Context(), pg)
+	// Фильтр статуса — как на панели оператора: валидируем до SQL.
+	status := domain.Status(strings.TrimSpace(r.URL.Query().Get("status")))
+	if status != "" && !status.Valid() {
+		writeJSON(w, http.StatusBadRequest, errorResp{"status is invalid"})
+		return
+	}
+	items, total, err := s.st.ListAppealsMeta(r.Context(), pg, string(status))
 	if err != nil {
 		writeErr(w, r, err)
 		return

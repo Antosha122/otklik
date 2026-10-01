@@ -291,7 +291,7 @@ func (st *Store) ListOperatorWorkedAppealsMeta(ctx context.Context, userID uuid.
 	return out, total, rows.Err()
 }
 
-func (st *Store) ListAppealsMeta(ctx context.Context, pg Page) ([]AdminAppealMeta, int, error) {
+func (st *Store) ListAppealsMeta(ctx context.Context, pg Page, status string) ([]AdminAppealMeta, int, error) {
 	set, err := st.GetSettings(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -303,13 +303,18 @@ func (st *Store) ListAppealsMeta(ctx context.Context, pg Page) ([]AdminAppealMet
 		       ` + fmt.Sprintf(routingFlagsSQL, set.ExpertActiveLimit) + `
 		FROM appeals a
 		LEFT JOIN categories c ON c.id = a.category_id
-		LEFT JOIN users u ON u.id = a.assigned_expert_id
-		ORDER BY a.created_at DESC`
-	total, err := st.countRows(ctx, q, nil)
+		LEFT JOIN users u ON u.id = a.assigned_expert_id`
+	args := []any{}
+	if status != "" {
+		q += ` WHERE a.status = $1`
+		args = append(args, status)
+	}
+	q += ` ORDER BY a.created_at DESC`
+	total, err := st.countRows(ctx, q, args)
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg))
+	rows, err := st.DB.QueryContext(ctx, applyPage(q, pg), args...)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -31,22 +31,47 @@
 
     <div id="adPanel">
       <div class="panel-head">
-        <h3>Аналитика</h3>
-        <div>
-          <button class="ghost small" data-action="export-csv">Выгрузить CSV</button>
+        <h3>Дашборд</h3>
+        <div class="btnrow">
           <button class="ghost small" data-action="reload-stats">Обновить</button>
         </div>
       </div>
       <div class="filter-line">
         <label for="adFrom">Период с</label><input type="date" id="adFrom">
         <label for="adTo">по</label><input type="date" id="adTo">
-        <button class="ghost small" data-action="reload-stats">Применить период</button>
+        <button class="ghost small" data-action="stats-period" data-arg="7">7 дней</button>
+        <button class="ghost small" data-action="stats-period" data-arg="30">30 дней</button>
+        <button class="ghost small" data-action="stats-period" data-arg="all">всё время</button>
       </div>
-      <div id="adStats" class="note"></div>
+      <div id="adKpi"></div>
+      <div class="chart-grid">
+        <div class="chart-box wide"><h3>Динамика обращений по дням</h3><div id="adChartDaily"></div></div>
+        <div class="chart-box"><h3>Статусы обращений</h3><div id="adChartStatus"></div></div>
+        <div class="chart-box"><h3>Специальности</h3><div id="adChartGroups"></div></div>
+        <div class="chart-box"><h3>Топ категорий</h3><div id="adChartCats"></div></div>
+      </div>
+      <div class="panel-head"><h3>Нагрузка сотрудников</h3><span class="note">лимит активных — из настроек маршрутизации</span></div>
+      <div id="adWorkload"></div>
+      <div class="note">Выгрузка обращений в CSV с фильтрами (период, статус, специальность и др.) — в личном кабинете.</div>
       <hr class="divider">
       <div class="panel-head">
         <h3>Все обращения</h3>
         <button class="ghost small" data-action="reload-admin-appeals">Обновить</button>
+      </div>
+      <div class="filter-line">
+        <label for="adFilterStatus">Статус</label>
+        <select id="adFilterStatus">
+          <option value="">любой статус</option>
+          <option value="new">новое</option>
+          <option value="assigned">назначено</option>
+          <option value="in_progress">в работе</option>
+          <option value="needs_clarification">нужны уточнения</option>
+          <option value="answer_ready">готов ответ</option>
+          <option value="returned">возвращено</option>
+          <option value="completed">завершено</option>
+          <option value="rejected">отклонено</option>
+          <option value="closed_no_response">закрыто без ответа</option>
+        </select>
       </div>
       <div id="adAppeals"></div>
       <hr class="divider">

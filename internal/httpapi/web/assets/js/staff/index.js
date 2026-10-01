@@ -5,7 +5,7 @@ import { loadCategories } from '../categories.js';
 import { initStaffAuth, promptPasswordChange } from './auth.js';
 import { loadQueue, loadOpAll, loadExpert, bindListFilters, loadMyStats, loadOpComplaints } from './lists.js';
 import { openDetailFromURL } from './detail.js';
-import { loadAdminAppeals, loadAdminUsers, loadAdminCats, loadStats, loadAdminSettings, loadComplaints } from './admin.js';
+import { loadAdminAppeals, loadAdminUsers, loadAdminCats, loadStats, loadAdminSettings, loadComplaints, bindAdminFilters } from './admin.js';
 import { staffState, roleHome } from './state.js';
 
 function bindAuthHooks() {
@@ -94,6 +94,7 @@ export async function adminInit() {
   const me = await guardPage(['admin']);
   if (!me) return;
   await loadCategories();
+  bindAdminFilters();
   loadAdminAppeals();
   loadAdminUsers();
   loadAdminCats();

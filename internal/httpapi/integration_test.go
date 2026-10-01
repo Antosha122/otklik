@@ -158,7 +158,6 @@ func TestIT_MustChangePasswordReconcile(t *testing.T) {
 		map[string]string{"current_password": "my-own-strong-pwd", "new_password": itSeedPwd}, http.StatusOK)
 }
 
-
 // itEnv — изолированные HTTP-инстансы (свежие rate-limiter'ы) поверх общей БД.
 type itEnv struct {
 	t     *testing.T
@@ -686,6 +685,129 @@ func TestIT_ExportCSV(t *testing.T) {
 	}
 }
 
+// TestIT_ExportCSVFilters — фильтры выгрузки из личного кабинета уточняют
+// выборку по статусу, а некорректные значения отклоняются с 400.
+func TestIT_ExportCSVFilters(t *testing.T) {
+	e := newIT(t)
+	idNew, _ := e.createAppeal("Обращение без обработчиков для фильтра экспорта", "")
+	idReady, _ := e.createAppeal("Обращение с готовым ответом для фильтра экспорта", "")
+	e.toAnswerReady(idReady) // доводит до answer_ready (assign → take → recommendation)
+	admTok := e.login("admin")
+
+	csv := func(query string) string {
+		w := e.mustDo(e.staff, "GET", "/api/export/appeals"+query, admTok, nil, nil, http.StatusOK)
+		return w.Body.String()
+	}
+
+	// Статусный фильтр: каждое обращение попадает только в свою выборку.
+	if b := csv("?status=new"); !strings.Contains(b, idNew) || strings.Contains(b, idReady) {
+		t.Error("фильтр status=new отдает неверный набор обращений")
+	}
+	if b := csv("?status=answer_ready"); !strings.Contains(b, idReady) || strings.Contains(b, idNew) {
+		t.Error("фильтр status=answer_ready отдает неверный набор обращений")
+	}
+
+	// Приоритет: низкий существует только если проставлен вручную —
+	// проверяем, что пересечение фильтров не роняет выборку.
+	if b := csv("?status=new&priority=normal"); !strings.Contains(b, idNew) {
+		t.Error("пересечение фильтров status+priority потеряло обращение с обычным приоритетом")
+	}
+	if b := csv("?status=new&priority=urgent"); strings.Contains(b, idNew) {
+		t.Error("фильтр priority=urgent вернул обращение с обычным приоритетом")
+	}
+
+	// Некорректные значения — 400 с понятной ошибкой, без выгрузки.
+	e.mustDo(e.staff, "GET", "/api/export/appeals?status=bogus", admTok, nil, nil, http.StatusBadRequest)
+	e.mustDo(e.staff, "GET", "/api/export/appeals?group=unknown", admTok, nil, nil, http.StatusBadRequest)
+	e.mustDo(e.staff, "GET", "/api/export/appeals?crisis=maybe", admTok, nil, nil, http.StatusBadRequest)
+
+	// Ролевой охват сохраняется и под фильтром: специалист не получает чужое.
+	expTok := e.login("lawyer1")
+	w := e.mustDo(e.staff, "GET", "/api/export/appeals?status=new", expTok, nil, nil, http.StatusOK)
+	if strings.Contains(w.Body.String(), idNew) {
+		t.Error("специалисту под фильтром выгружено чужое обращение")
+	}
+}
+
+// TestIT_AdminDashboard — дашборд отдаёт дневную серию для графика,
+// лимит нагрузки и фильтруемый список обращений.
+func TestIT_AdminDashboard(t *testing.T) {
+	e := newIT(t)
+	idNew, _ := e.createAppeal("Новое обращение для дашборда", "")
+	idReady, _ := e.createAppeal("Доведённое обращение для дашборда", "")
+	e.toAnswerReady(idReady)
+	admTok := e.login("admin")
+
+	// Статистика за сегодня: серия содержит сегодняшний день с созданными.
+	today := time.Now().Format("2006-01-02")
+	w := e.mustDo(e.staff, "GET", "/api/admin/stats?from="+today, admTok, nil, nil, http.StatusOK)
+	var st struct {
+		ByDay []struct {
+			Day       string `json:"day"`
+			Created   int    `json:"created"`
+			Completed int    `json:"completed"`
+		} `json:"by_day"`
+		ExpertLimit int `json:"expert_limit"`
+		Active      int `json:"active"`
+		Total       int `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatalf("не удалось разобрать статистику: %v %s", err, w.Body.String())
+	}
+	if len(st.ByDay) != 1 || st.ByDay[0].Day != today {
+		t.Fatalf("by_day = %+v, want единственный день %s", st.ByDay, today)
+	}
+	if st.ByDay[0].Created < 2 {
+		t.Errorf("созданных за сегодня = %d, want >= 2", st.ByDay[0].Created)
+	}
+	if st.ExpertLimit <= 0 {
+		t.Errorf("expert_limit = %d, want > 0", st.ExpertLimit)
+	}
+	if st.Total < 2 || st.Active < 1 {
+		t.Errorf("total=%d active=%d — метрики дашборда пусты", st.Total, st.Active)
+	}
+
+	// Список «все обращения» фильтруется по статусу: в выдаче только
+	// запрошенный статус, и нужное обращение присутствует.
+	// (БД общая на прогон, поэтому проверяем состав, а не количество.)
+	var page struct {
+		Appeals []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"appeals"`
+	}
+	w = e.mustDo(e.staff, "GET", "/api/admin/appeals?status=answer_ready", admTok, nil, nil, http.StatusOK)
+	json.Unmarshal(w.Body.Bytes(), &page)
+	found := false
+	for _, a := range page.Appeals {
+		if a.Status != "answer_ready" {
+			t.Fatalf("фильтр answer_ready пропустил обращение в статусе %s", a.Status)
+		}
+		if a.ID == idReady {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("status=answer_ready не отдал обращение %s", idReady)
+	}
+	w = e.mustDo(e.staff, "GET", "/api/admin/appeals?status=bogus", admTok, nil, nil, http.StatusBadRequest)
+
+	w = e.mustDo(e.staff, "GET", "/api/admin/appeals?status=new", admTok, nil, nil, http.StatusOK)
+	json.Unmarshal(w.Body.Bytes(), &page)
+	found = false
+	for _, a := range page.Appeals {
+		if a.Status != "new" {
+			t.Fatalf("фильтр new пропустил обращение в статусе %s", a.Status)
+		}
+		if a.ID == idNew {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("status=new не отдал обращение %s", idNew)
+	}
+}
+
 func itMin(a, b int) int {
 	if a < b {
 		return a
@@ -1029,4 +1151,3 @@ func TestIT_Profile(t *testing.T) {
 		t.Errorf("страница /profile должна содержать заголовок: %s", w.Body.String()[:200])
 	}
 }
-

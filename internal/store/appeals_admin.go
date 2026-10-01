@@ -170,6 +170,10 @@ type AdminStats struct {
 	ByApplicantType     []StatRow     `json:"by_applicant_type"`
 	BySpecialistGroup   []StatRow     `json:"by_specialist_group"`
 	Workload            []WorkloadRow `json:"workload"`
+	// ByDay и ExpertLimit заполняет хендлер: серия для графика динамики
+	// и общий лимит активных обращений (для индикаторов нагрузки).
+	ByDay       []DayCount `json:"by_day"`
+	ExpertLimit int        `json:"expert_limit"`
 }
 
 // periodFilter строит условие по created_at обращения; nil-границы не фильтруют.

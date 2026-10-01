@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -114,6 +115,14 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	// График динамики и лимит нагрузки — атрибуты дашборда, а не SQL-агрегата.
+	if stats.ByDay, err = s.st.AdminDailySeries(r.Context(), from, to, 30); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if set, err := s.st.GetSettings(r.Context()); err == nil {
+		stats.ExpertLimit = set.ExpertActiveLimit
+	}
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -131,73 +140,110 @@ func (s *Server) handleMyStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// parseExportQuery разбирает фильтры выгрузки: период, статус, приоритет,
+// специализация (или free — свободная форма), кризисные да/нет.
+func (s *Server) parseExportQuery(r *http.Request) (store.ExportFilter, bool) {
+	var f store.ExportFilter
+	from, to, err := parsePeriod(r)
+	if err != nil {
+		return f, false
+	}
+	f.From, f.To = from, to
+
+	if v := strings.TrimSpace(r.URL.Query().Get("status")); v != "" {
+		f.Status = domain.Status(v)
+		if !f.Status.Valid() {
+			return f, false
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("priority")); v != "" {
+		if v != "low" && v != "normal" && v != "urgent" {
+			return f, false
+		}
+		f.Priority = v
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("group")); v != "" {
+		switch v {
+		case "free", "psychologists", "conflictologists", "lawyers", "social_pedagogues":
+			f.Group = v
+		default:
+			return f, false
+		}
+	}
+	switch strings.TrimSpace(r.URL.Query().Get("crisis")) {
+	case "", "any":
+	case "yes", "1", "true":
+		b := true
+		f.Crisis = &b
+	case "no", "0", "false":
+		b := false
+		f.Crisis = &b
+	default:
+		return f, false
+	}
+	return f, true
+}
+
+// handleExportAppeals — CSV-выгрузка из личного кабинета с фильтрами.
+// Охват зависит от роли: админ — все обращения, оператор — только те, где он
+// назначал специалиста или отклонял, специалист — только свои.
 func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
+
+	f, ok := s.parseExportQuery(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, errorResp{"invalid export filter: check status, priority, group, crisis, from/to"})
+		return
+	}
+	switch p.Role {
+	case domain.RoleExpert:
+		f.ExpertID = &p.UserID
+	case domain.RoleOperator:
+		f.OperatorID = &p.UserID
+	}
+
+	items, err := s.st.ExportAppeals(r.Context(), f)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 
 	var buf bytes.Buffer
 	buf.WriteString("\ufeff") // BOM: Excel корректно открывает UTF-8
 	buf.WriteString("id,applicant_type,category,status,priority,crisis,assigned_expert,returns,created_at,updated_at\r\n")
-
-	row := func(cols ...string) {
-		for i, c := range cols {
-			if strings.ContainsAny(c, ",\"\r\n") {
-				c = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
-			}
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			buf.WriteString(c)
-		}
-		buf.WriteString("\r\n")
-	}
-
-	if p.Role == domain.RoleExpert {
-		items, _, err := s.st.ListExpertAppeals(r.Context(), p.UserID, "", "", "", store.Page{})
-		if err != nil {
-			writeErr(w, r, err)
-			return
-		}
-		for _, it := range items {
-			row(it.ID.String(), it.ApplicantType, deref(it.CategoryName),
-				it.Status, it.Priority, boolStr(it.CrisisDetected), "",
-				strconv.Itoa(it.ReturnCount), it.CreatedAt.Format("2006-01-02 15:04"), it.UpdatedAt.Format("2006-01-02 15:04"))
-		}
-	} else if p.Role == domain.RoleOperator {
-		// Оператор выгружает только обращения, с которыми работал сам:
-		// назначал специалиста или отклонял, — а не весь массив программы.
-		items, _, err := s.st.ListOperatorWorkedAppealsMeta(r.Context(), p.UserID, store.Page{})
-		if err != nil {
-			writeErr(w, r, err)
-			return
-		}
-		for _, it := range items {
-			row(it.ID.String(), it.ApplicantType, deref(it.CategoryName), it.Status, it.Priority,
-				boolStr(it.CrisisDetected), deref(it.ExpertLogin),
-				strconv.Itoa(it.ReturnCount), it.CreatedAt.Format("2006-01-02 15:04"), it.UpdatedAt.Format("2006-01-02 15:04"))
-		}
-	} else {
-		items, _, err := s.st.ListAppealsMeta(r.Context(), store.Page{})
-		if err != nil {
-			writeErr(w, r, err)
-			return
-		}
-		for _, it := range items {
-			row(it.ID.String(), it.ApplicantType, deref(it.CategoryName),
-				it.Status, it.Priority, boolStr(it.CrisisDetected), deref(it.ExpertLogin),
-				strconv.Itoa(it.ReturnCount), it.CreatedAt.Format("2006-01-02 15:04"), it.UpdatedAt.Format("2006-01-02 15:04"))
-		}
+	for _, it := range items {
+		rowCSV(&buf,
+			it.ID.String(), it.ApplicantType, nullStr(it.Category),
+			string(it.Status), it.Priority, boolStr(it.Crisis), nullStr(it.ExpertLogin),
+			strconv.Itoa(it.Returns),
+			it.CreatedAt.Format("2006-01-02 15:04"), it.UpdatedAt.Format("2006-01-02 15:04"))
 	}
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="appeals.csv"`)
+	w.Header().Set("Content-Disposition",
+		`attachment; filename="appeals-`+time.Now().Format("20060102")+`.csv"`)
 	_, _ = w.Write(buf.Bytes())
 }
 
-func deref(s *string) string {
-	if s == nil {
+// rowCSV пишет одну CSV-строку с экранированием по RFC 4180.
+func rowCSV(buf *bytes.Buffer, cols ...string) {
+	for i, c := range cols {
+		if strings.ContainsAny(c, ",\"\r\n") {
+			c = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
+		}
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(c)
+	}
+	buf.WriteString("\r\n")
+}
+
+func nullStr(s sql.NullString) string {
+	if !s.Valid {
 		return ""
 	}
-	return *s
+	return s.String
 }
 
 func boolStr(b bool) string {

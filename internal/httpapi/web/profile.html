@@ -51,7 +51,56 @@
     <hr class="divider">
     <div class="panel-head"><h3>Последние действия</h3></div>
     <div id="prEvents" class="note"></div>
-    <div class="form-foot"><button class="ghost small" data-action="export-csv">Выгрузить CSV</button></div>
+
+    <hr class="divider">
+    <div class="panel-head">
+      <h3>Выгрузка обращений (CSV)</h3>
+      <button class="ghost small" data-action="export-csv">Скачать CSV</button>
+    </div>
+    <div class="filter-line">
+      <label for="exFrom">Период с</label><input type="date" id="exFrom">
+      <label for="exTo">по</label><input type="date" id="exTo">
+    </div>
+    <div class="filter-line">
+      <label for="exStatus">Статус</label>
+      <select id="exStatus">
+        <option value="">любой статус</option>
+        <option value="new">новое</option>
+        <option value="assigned">назначено</option>
+        <option value="in_progress">в работе</option>
+        <option value="needs_clarification">нужны уточнения</option>
+        <option value="answer_ready">готов ответ</option>
+        <option value="returned">возвращено</option>
+        <option value="completed">завершено</option>
+        <option value="rejected">отклонено</option>
+        <option value="closed_no_response">закрыто без ответа</option>
+      </select>
+      <label for="exPriority">Приоритет</label>
+      <select id="exPriority">
+        <option value="">любой</option>
+        <option value="low">низкий</option>
+        <option value="normal">обычный</option>
+        <option value="urgent">срочный</option>
+      </select>
+    </div>
+    <div class="filter-line">
+      <label for="exGroup">Специальность</label>
+      <select id="exGroup">
+        <option value="">любая</option>
+        <option value="psychologists">психолог</option>
+        <option value="conflictologists">конфликтолог</option>
+        <option value="lawyers">юрист</option>
+        <option value="social_pedagogues">социальный педагог</option>
+        <option value="free">свободная форма</option>
+      </select>
+      <label for="exCrisis">Кризисные</label>
+      <select id="exCrisis">
+        <option value="">все</option>
+        <option value="yes">только кризисные</option>
+        <option value="no">без кризисных</option>
+      </select>
+    </div>
+    <div class="note" id="exScope"></div>
   </div>
 </section>
 </main>

@@ -4,11 +4,28 @@ import { ruStatus, ruRole, ruGroup, ruAppType } from '../core/i18n.js';
 import { registerActions } from '../core/actions.js';
 import { loadCategories } from '../categories.js';
 import { pagerHTML } from './lists.js';
+import { kpiHTML, dailyBarsSVG, donutHTML, hbarHTML, loadbarHTML, STATUS_COLORS, CHART_COLORS } from '../core/chart.js';
 
 const shortId = (s) => (s ? String(s).slice(0, 8) : '—');
 
 // Текущая страница списка «Все обращения» на панели админа.
 let adPage = 1;
+
+const fmtNum = (v, suffix) => (v == null ? '—' : (Math.round(v * 10) / 10) + (suffix || ''));
+
+// Быстрые периоды: N дней назад … сегодня; «всё время» очищает поля.
+function setQuickPeriod(arg) {
+  const to = $('adTo'), from = $('adFrom');
+  if (!to || !from) return;
+  if (arg === 'all') { from.value = ''; to.value = ''; }
+  else {
+    const d = new Date();
+    to.value = d.toISOString().slice(0, 10);
+    d.setDate(d.getDate() - (Number(arg) - 1));
+    from.value = d.toISOString().slice(0, 10);
+  }
+  loadStats();
+}
 
 export async function loadStats() {
   try {
@@ -16,43 +33,59 @@ export async function loadStats() {
     if ($('adFrom') && $('adFrom').value) q.set('from', $('adFrom').value);
     if ($('adTo') && $('adTo').value) q.set('to', $('adTo').value);
     const s = await api('GET', '/api/admin/stats' + (q.toString() ? '?' + q.toString() : ''));
-    const fmtNum = (v, suffix) => (v == null ? '—' : (Math.round(v * 10) / 10) + (suffix || ''));
-    const fmtDay = (v) => (v ? new Date(v).toLocaleDateString('ru-RU') : '…');
-    const period = (s.period_from || s.period_to)
-      ? fmtDay(s.period_from) + ' — ' + fmtDay(s.period_to) : 'за всё время';
-    const row = (l, v) => `<div class="kv"><b>${l}</b><span>${v}</span></div>`;
-    const workload = (s.workload || []).map((w) => {
-      const who = `${esc(w.login)} (${esc(ruRole(w.role))})`;
-      if (w.role === 'operator') return row(who, 'назначил обращений: ' + w.assigned);
-      return row(who, 'взял: ' + w.assigned + ' · в работе: ' + w.active + ' · завершено: ' + w.completed +
-        ' · ср. решение: ' + fmtNum(w.avg_resolution_hours, ' ч'));
-    }).join('') || 'нет данных';
-    $('adStats').innerHTML =
-      row('Период', period) +
-      row('Всего обращений', s.total) +
-      row('В работе', s.active + ' (срочных: ' + s.urgent_active + ')') +
-      row('Новых за 7 / 30 дней', s.last_7_days + ' / ' + s.last_30_days) +
-      row('Завершено', s.resolved) +
-      row('Доля срочных', fmtNum(s.urgent_share_pct, '%')) +
-      row('Доля возвратов на доработку', fmtNum(s.return_share_pct, '%')) +
-      row('Ср. время до принятия оператором', fmtNum(s.avg_assign_minutes, ' мин')) +
-      row('Ср. время до первого ответа', fmtNum(s.avg_first_response_minutes, ' мин')) +
-      row('Среднее время решения', fmtNum(s.avg_resolution_hours, ' ч')) +
-      '<h3>По статусам</h3>' +
-      (s.by_status || []).map((r) => row(esc(ruStatus(r.label)), r.count)).join('') +
-      '<h3>По типам заявителей</h3>' +
-      (s.by_applicant_type || []).map((r) => row(esc(ruAppType(r.label)), r.count)).join('') +
-      '<h3>По категориям</h3>' +
-      (s.by_category || []).map((r) => row(esc(r.label), r.count)).join('') +
-      '<h3>По специальностям</h3>' +
-      (s.by_specialist_group || []).map((r) => row(r.label === 'free' ? 'свободная форма' : esc(ruGroup(r.label)), r.count)).join('') +
-      '<h3>Нагрузка по сотрудникам</h3>' + workload;
-  } catch (e) { $('adStats').textContent = e.message; }
+
+    // KPI-плитки: ключевые метрики периода и живые (не зависящие от периода) счётчики.
+    $('adKpi').innerHTML = kpiHTML([
+      { label: 'Всего обращений (период)', value: s.total, hint: 'новых за 7 / 30 дней: ' + s.last_7_days + ' / ' + s.last_30_days },
+      { label: 'В работе сейчас', value: s.active, hint: 'срочных: ' + s.urgent_active, tone: s.urgent_active ? 'bad' : '' },
+      { label: 'Завершено (период)', value: s.resolved, tone: 'ok' },
+      { label: 'Ср. время решения', value: fmtNum(s.avg_resolution_hours, ' ч') },
+      { label: 'Ср. до назначения', value: fmtNum(s.avg_assign_minutes, ' мин') },
+      { label: 'Ср. до первого ответа', value: fmtNum(s.avg_first_response_minutes, ' мин') },
+      { label: 'Доля срочных', value: fmtNum(s.urgent_share_pct, ' %'), tone: s.urgent_share_pct >= 30 ? 'warn' : '' },
+      { label: 'Возвраты на доработку', value: fmtNum(s.return_share_pct, ' %') },
+    ]);
+
+    $('adChartDaily').innerHTML = dailyBarsSVG(s.by_day || []);
+
+    const statusItems = (s.by_status || []).map((r) => ({
+      label: ruStatus(r.label), count: r.count,
+      color: STATUS_COLORS[r.label] || CHART_COLORS[7],
+    }));
+    $('adChartStatus').innerHTML = donutHTML(statusItems);
+
+    const groups = (s.by_specialist_group || []).map((r, i) => ({
+      label: r.label === 'free' ? 'свободная форма' : ruGroup(r.label),
+      count: r.count, color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
+    $('adChartGroups').innerHTML = hbarHTML(groups);
+
+    const cats = (s.by_category || []).slice(0, 8).map((r, i) => ({
+      label: esc(r.label), count: r.count, color: CHART_COLORS[(i + 2) % CHART_COLORS.length],
+    }));
+    $('adChartCats').innerHTML = hbarHTML(cats);
+
+    // Нагрузка: операторам — сколько назначили, специалистам — полоса active/limit.
+    const limit = s.expert_limit || 0;
+    $('adWorkload').innerHTML = (s.workload || []).map((w) => {
+      if (w.role === 'operator') {
+        return `<div class="wload"><span class="wload-l">${esc(w.login)} · оператор</span>` +
+          `<span class="note">назначил обращений: <b>${w.assigned}</b></span></div>`;
+      }
+      const overload = w.active >= limit && limit > 0;
+      return `<div class="wload${overload ? ' hot' : ''}">` +
+        `<span class="wload-l">${esc(w.login)} · специалист</span>` +
+        `<span class="wload-bar">${loadbarHTML(w.active, limit)}</span>` +
+        `<span class="note">завершено ${w.completed} · ср. решение ${fmtNum(w.avg_resolution_hours, ' ч')}</span></div>`;
+    }).join('') || '<div class="note">нет данных</div>';
+  } catch (e) { $('adKpi').innerHTML = '<div class="note">' + esc(e.message) + '</div>'; }
 }
 
 export async function loadAdminAppeals() {
   try {
-    const r = await api('GET', '/api/admin/appeals?page=' + adPage);
+    const qs = new URLSearchParams({ page: String(adPage) });
+    if ($('adFilterStatus') && $('adFilterStatus').value) qs.set('status', $('adFilterStatus').value);
+    const r = await api('GET', '/api/admin/appeals?' + qs.toString());
     const list = r.appeals || [];
     $('adAppeals').innerHTML = (list.length
       ? list.map((a) =>
@@ -170,4 +203,14 @@ registerActions({
   'admin-create-category': adminCreateCategory,
   'reload-complaints': loadComplaints,
   'reload-stats': loadStats,
+  'stats-period': setQuickPeriod,
 });
+
+// Фильтр статуса списка «Все обращения»: смена — всегда первая страница.
+export function bindAdminFilters() {
+  if ($('adFilterStatus')) {
+    $('adFilterStatus').addEventListener('change', () => { adPage = 1; loadAdminAppeals(); });
+  }
+  if ($('adFrom')) $('adFrom').addEventListener('change', loadStats);
+  if ($('adTo')) $('adTo').addEventListener('change', loadStats);
+}

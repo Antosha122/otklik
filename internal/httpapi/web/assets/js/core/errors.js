@@ -4,6 +4,8 @@
 // humanError(raw, status) всегда возвращает строку на русском.
 
 const SERVER_ERRORS_RU = {
+  'invalid export filter: check status, priority, group, crisis, from/to':
+    'Проверьте фильтры выгрузки: статус, приоритет, специальность, кризисные, период',
   'login and password are required': 'Введите логин и пароль',
   'invalid credentials': 'Неверный логин или пароль',
   'user is deactivated': 'Учётная запись деактивирована',

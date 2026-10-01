@@ -123,8 +123,6 @@ export async function loadMyStats() {
   } catch (e) { el.textContent = e.message; }
 }
 
-const exportCsv = () => { window.open('/api/export/appeals', '_blank'); };
-
 export async function loadOpComplaints() {
   try {
     const cs = (await api('GET', '/api/operator/complaints')).complaints || [];
@@ -141,7 +139,6 @@ registerActions({
   'reload-expert': () => { exPage = 1; loadExpert(); },
   'reload-my-stats': loadMyStats,
   'reload-op-complaints': loadOpComplaints,
-  'export-csv': exportCsv,
   'pg-op-all': (p) => { opAllPage = Math.max(1, Number(p) || 1); loadOpAll(); },
   'pg-expert': (p) => { exPage = Math.max(1, Number(p) || 1); loadExpert(); },
 });
