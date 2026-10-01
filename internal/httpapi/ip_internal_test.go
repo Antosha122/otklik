@@ -120,14 +120,29 @@ func TestSameOriginMiddleware(t *testing.T) {
 	}
 }
 
+// При исчерпании лимита ключей новый не получает отказ, а вытесняет самый
+// давно использовавшийся — иначе ротация IP превращалась бы в DoS новичков.
 func TestRateLimiterKeyCap(t *testing.T) {
 	rl := &rateLimiter{hits: map[string][]time.Time{}}
+	base := time.Now().Add(-time.Hour)
 	rl.mu.Lock()
 	for i := 0; i < rlMaxKeys; i++ {
-		rl.hits[strconv.Itoa(i)] = []time.Time{time.Now()}
+		// чем меньше i, тем старше последнее обращение по ключу
+		rl.hits[strconv.Itoa(i)] = []time.Time{base.Add(time.Duration(i) * time.Second)}
 	}
 	rl.mu.Unlock()
-	if rl.allow("new-key", 5, time.Hour) {
-		t.Fatal("новый ключ завёлся при исчерпанном лимите ключей")
+	if !rl.allow("new-key", 5, time.Hour) {
+		t.Fatal("новый ключ не прошёл при исчерпанном лимите ключей")
+	}
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if _, ok := rl.hits["0"]; ok {
+		t.Error("вытеснен не самый старый ключ")
+	}
+	if _, ok := rl.hits[strconv.Itoa(rlMaxKeys-1)]; !ok {
+		t.Error("самый свежий ключ был вытеснен")
+	}
+	if len(rl.hits) != rlMaxKeys {
+		t.Errorf("len(hits) = %d, want %d", len(rl.hits), rlMaxKeys)
 	}
 }

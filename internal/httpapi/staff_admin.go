@@ -228,6 +228,12 @@ func (s *Server) handleExportAppeals(w http.ResponseWriter, r *http.Request) {
 // rowCSV пишет одну CSV-строку с экранированием по RFC 4180.
 func rowCSV(buf *bytes.Buffer, cols ...string) {
 	for i, c := range cols {
+		// CSV-инъекция: Excel/LibreOffice исполняют ячейки, начинающиеся с
+		// =, +, -, @ или табуляции, как формулы. Ведущий апостроф делает
+		// содержимое текстом (в Excel он не отображается).
+		if c != "" && strings.ContainsAny(c[:1], "=+-@\t\r") {
+			c = "'" + c
+		}
 		if strings.ContainsAny(c, ",\"\r\n") {
 			c = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
 		}

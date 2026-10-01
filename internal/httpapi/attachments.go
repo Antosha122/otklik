@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"image"
 	"image/jpeg"
@@ -142,8 +143,11 @@ func (s *Server) handleDownloadAttachment(w http.ResponseWriter, r *http.Request
 
 // Перекодировка из пиксельного буфера: EXIF (включая GPS) не попадает в хранилище.
 func stripImageMetadata(data []byte, contentType string) []byte {
+	if contentType == "image/webp" {
+		return stripWebPMetadata(data)
+	}
 	if contentType != "image/jpeg" && contentType != "image/png" {
-		return data // gif/webp/pdf/txt без EXIF-геолокации не перекодируем
+		return data // gif/pdf/txt без EXIF-геолокации не перекодируем
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -159,4 +163,40 @@ func stripImageMetadata(data []byte, contentType string) []byte {
 		return data
 	}
 	return buf.Bytes()
+}
+
+// stripWebPMetadata вырезает из RIFF-контейнера WebP чанки EXIF и XMP —
+// именно в них хранятся GPS-координаты, время съёмки и модель устройства
+// (WebP наследует EXIF от JPEG). Перекодировка не нужна: контейнер
+// пересобирается побайтово, поэтому работают и анимированные файлы,
+// а размер не растёт. Повреждённый контейнер возвращается как есть.
+func stripWebPMetadata(data []byte) []byte {
+	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WEBP" {
+		return data
+	}
+	out := append([]byte(nil), data[:12]...)
+	off := 12
+	for off+8 <= len(data) {
+		chunkID := string(data[off : off+4])
+		size := int(binary.LittleEndian.Uint32(data[off+4 : off+8]))
+		payload := off + 8
+		if payload+size > len(data) {
+			return data // битый чанк — не рискуем, сохраняем оригинал
+		}
+		end := payload + size
+		if end < len(data) && end%2 == 1 {
+			end++ // чанки выровнены по чётному смещению (паддинг-байт)
+		}
+		if chunkID != "EXIF" && chunkID != "XMP " {
+			out = append(out, data[off:end]...)
+		}
+		off = end
+	}
+	if len(out) == len(data) {
+		return data // метаданных не было
+	}
+	// Заголовок RIFF: полное имя формата + размер файла без 8-байтного заголовка.
+	total := len(out) - 8
+	binary.LittleEndian.PutUint32(out[4:8], uint32(total))
+	return out
 }

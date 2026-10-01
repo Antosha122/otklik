@@ -163,6 +163,10 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResp{"password must be at least 8 characters"})
 		return
 	}
+	if msg := passwordStrengthError(req.NewPassword, p.Login); msg != "" {
+		writeJSON(w, http.StatusBadRequest, errorResp{msg})
+		return
+	}
 	if req.NewPassword == req.CurrentPassword {
 		writeJSON(w, http.StatusBadRequest, errorResp{"new password must differ from current"})
 		return
@@ -225,4 +229,33 @@ func actorPtr(p domain.Principal) *uuid.UUID {
 	}
 	id := p.UserID
 	return &id
+}
+
+// weakPasswords — короткий чёрный список самых частых паролей из утечек.
+// Полный словарь не нужен: перебор в лоб прикрывают bcrypt и rate-limit,
+// здесь отсекается лишь заведомо слабый выбор пользователя.
+var weakPasswords = map[string]bool{
+	"password": true, "password1": true, "password123": true, "passw0rd": true,
+	"12345678": true, "123456789": true, "1234567890": true, "87654321": true,
+	"qwerty123": true, "qwertyuiop": true, "1q2w3e4r": true, "qazwsx123": true,
+	"11111111": true, "22222222": true, "12121212": true, "00000000": true,
+	"abc12345": true, "abcd1234": true, "asdfghjk": true, "zxcvbnm1": true,
+	"iloveyou1": true, "admin123": true, "admin1234": true, "letmein1": true,
+	"welcome1": true, "welcome123": true, "otklik123": true, "otklik2026": true,
+}
+
+// passwordStrengthError возвращает человекочитаемую причину слабости пароля
+// или пустую строку, если пароль приемлем. Сравнение регистронезависимое.
+func passwordStrengthError(pwd, login string) string {
+	lp := strings.ToLower(pwd)
+	if weakPasswords[lp] {
+		return "password is too common, choose a less predictable one"
+	}
+	if login != "" && strings.Contains(lp, strings.ToLower(login)) {
+		return "password must not contain the login"
+	}
+	if strings.Contains(lp, "otklik") {
+		return "password must not contain the service name"
+	}
+	return ""
 }

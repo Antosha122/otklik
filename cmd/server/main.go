@@ -51,6 +51,12 @@ func main() {
 	if err := db.Seed(ctx, d, cfg.SeedDefaultPwd); err != nil {
 		fatal("seed", "error", err)
 	}
+	// SEED_DEFAULT_PWD не задан: пароль сгенерирован случайно и никому не известен.
+	// Печатаем его один раз (только в этот лог) — войти и сменить его нужно сразу.
+	if cfg.SeedPwdGenerated {
+		slog.Info("SEED_DEFAULT_PWD is empty: random demo password generated (shown once, must be changed on first login)",
+			"password", cfg.SeedDefaultPwd)
+	}
 
 	st := store.New(d)
 

@@ -28,7 +28,9 @@ services:
       DATABASE_URL: "postgres://otklik:${POSTGRES_PASSWORD}@db:5432/otklik?sslmode=disable"
       ATTACHMENTS_DIR: "/app/data/attachments"
       SESSION_TTL_MIN: "120"
-      SEED_DEFAULT_PWD: "${SEED_DEFAULT_PWD:-otklik-demo-2026}"
+      # Пароль демо-пользователей. Явного дефолта нет: если не задан в .env,
+      # приложение генерирует случайный и печатает его в лог один раз.
+      SEED_DEFAULT_PWD: "${SEED_DEFAULT_PWD:-}"
       # 1 = куки только по HTTPS (прод за Caddy); локальная разработка — 0 в .env.
       COOKIE_SECURE: "${COOKIE_SECURE:-1}"
       # Срок хранения завершённых обращений (дней); 0 — хранить бессрочно.
@@ -55,11 +57,16 @@ services:
     restart: unless-stopped
 
   # Ночные бэкапы БД: pg_dump в кастомном формате (-Fc — сжатие и выборочное
-  # восстановление), ротация последних N копий (BACKUP_KEEP, по умолчанию 14).
-  # Первый бэкап делается сразу при старте контейнера — удобно проверять.
-  # Восстановление: docker compose exec db pg_restore -U otklik -d otklik --clean /backups/...
+  # восстановление), затем шифрование AES-256-CBC (openssl; ключ — BACKUP_KEY
+  # из .env, в файловой системе ключ не лежит). Ротация последних N копий
+  # (BACKUP_KEEP, по умолчанию 14). Первый бэкап делается сразу при старте
+  # контейнера — удобно проверять.
+  # Образ debian (не alpine): в alpine нет openssl.
+  # Восстановление:
+  #   openssl enc -d -aes-256-cbc -pbkdf2 -in otklik-<ts>.dump.enc -pass env:BACKUP_KEY \
+  #     | docker compose exec -T db pg_restore -U otklik -d otklik --clean
   db-backup:
-    image: postgres:16-alpine
+    image: postgres:16
     container_name: otklik-db-backup
     environment:
       PGUSER: otklik
@@ -67,20 +74,24 @@ services:
       PGHOST: db
       PGDATABASE: otklik
       BACKUP_KEEP: "${BACKUP_KEEP:-14}"
+      BACKUP_KEY: "${BACKUP_KEY:?set BACKUP_KEY in .env (see .env.example)}"
     volumes:
       - backups:/backups
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -eu
         while true; do
           ts=$$(date +%Y%m%d-%H%M%S)
-          pg_dump -Fc -f "/backups/otklik-$$ts.dump"
-          echo "backup saved: otklik-$$ts.dump"
-          ls -1t /backups/otklik-*.dump | tail -n +$$(($$BACKUP_KEEP + 1)) | xargs -r rm -f
+          pg_dump -Fc -f "/tmp/otklik-$$ts.dump"
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in "/tmp/otklik-$$ts.dump" \
+            -out "/backups/otklik-$$ts.dump.enc" -pass env:BACKUP_KEY
+          rm -f "/tmp/otklik-$$ts.dump"
+          echo "backup saved: otklik-$$ts.dump.enc"
+          ls -1t /backups/otklik-*.dump.enc | tail -n +$$(($$BACKUP_KEEP + 1)) | xargs -r rm -f
           sleep 86400
         done
     restart: unless-stopped

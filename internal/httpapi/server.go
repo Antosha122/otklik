@@ -473,9 +473,22 @@ func (rl *rateLimiter) allow(key string, n int, window time.Duration) bool {
 		rl.hits[key] = kept
 		return false
 	}
-	// Новый ключ при исчерпанном лимите ключей не заводим (sweeper подчистит).
+	// Новый ключ при исчерпанном лимите ключей вытесняет самый давно
+	// использовавшийся. Прежний вариант (отказывать новичку) означал бы
+	// лёгкий DoS: атакующий с ротой IP заполнял карту — и легитимные
+	// посетители не могли ни войти, ни создать обращение.
 	if _, exists := rl.hits[key]; !exists && len(rl.hits) >= rlMaxKeys {
-		return false
+		victim, last := "", time.Now()
+		for k, v := range rl.hits {
+			kt := time.Time{}
+			if len(v) > 0 {
+				kt = v[len(v)-1]
+			}
+			if victim == "" || kt.Before(last) {
+				victim, last = k, kt
+			}
+		}
+		delete(rl.hits, victim)
 	}
 	rl.hits[key] = append(kept, now)
 	return true

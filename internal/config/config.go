@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"strconv"
 	"time"
@@ -14,8 +16,11 @@ type Config struct {
 	CookieSecure    bool
 	SessionTTL      time.Duration
 	SeedDefaultPwd  string
-	LogFormat       string // json (по умолчанию, для прода) или text (локальная разработка)
-	RetentionDays   int    // срок хранения терминальных обращений; 0 — хранить бессрочно
+	// SeedPwdGenerated: SEED_DEFAULT_PWD не задан, пароль сгенерирован случайно —
+	// main печатает его в лог один раз (иначе в демо-аккаунты никто не войдёт).
+	SeedPwdGenerated bool
+	LogFormat        string // json (по умолчанию, для прода) или text (локальная разработка)
+	RetentionDays    int    // срок хранения терминальных обращений; 0 — хранить бессрочно
 }
 
 func env(key, def string) string {
@@ -42,15 +47,27 @@ func Load() Config {
 			retention = n
 		}
 	}
+	// Дефолтного демо-пароля в коде быть не должно: он был бы известен каждому,
+	// кто видел репозиторий. Если SEED_DEFAULT_PWD не задан — генерируем
+	// случайный (main напечатает его в лог один раз, при первом старте).
+	seedPwd, seedPwdGenerated := os.Getenv("SEED_DEFAULT_PWD"), false
+	if seedPwd == "" {
+		buf := make([]byte, 12)
+		if _, err := rand.Read(buf); err != nil {
+			panic("config: crypto/rand unavailable for seed password: " + err.Error())
+		}
+		seedPwd, seedPwdGenerated = "seed-"+hex.EncodeToString(buf), true
+	}
 	return Config{
-		ListenAddr:      env("LISTEN_ADDR", ":8080"),
-		StaffListenAddr: env("STAFF_LISTEN_ADDR", ":8081"),
-		DatabaseURL:     env("DATABASE_URL", "postgres://otklik:otklik@localhost:5432/otklik?sslmode=disable"),
-		AttachmentsDir:  env("ATTACHMENTS_DIR", "./data/attachments"),
-		CookieSecure:    secure,
-		SessionTTL:      ttl,
-		SeedDefaultPwd:  env("SEED_DEFAULT_PWD", "otklik-demo-2026"),
-		LogFormat:       env("LOG_FORMAT", "json"),
-		RetentionDays:   retention,
+		ListenAddr:       env("LISTEN_ADDR", ":8080"),
+		StaffListenAddr:  env("STAFF_LISTEN_ADDR", ":8081"),
+		DatabaseURL:      env("DATABASE_URL", "postgres://otklik:otklik@localhost:5432/otklik?sslmode=disable"),
+		AttachmentsDir:   env("ATTACHMENTS_DIR", "./data/attachments"),
+		CookieSecure:     secure,
+		SessionTTL:       ttl,
+		SeedDefaultPwd:   seedPwd,
+		SeedPwdGenerated: seedPwdGenerated,
+		LogFormat:        env("LOG_FORMAT", "json"),
+		RetentionDays:    retention,
 	}
 }

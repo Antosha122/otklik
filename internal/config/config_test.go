@@ -32,8 +32,20 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SessionTTL != 2*time.Hour {
 		t.Errorf("SessionTTL = %v, want 2h", cfg.SessionTTL)
 	}
-	if cfg.SeedDefaultPwd != "otklik-demo-2026" {
-		t.Errorf("SeedDefaultPwd = %q", cfg.SeedDefaultPwd)
+}
+
+// Пустой SEED_DEFAULT_PWD: пароль генерируется случайно (дефолта в коде нет).
+func TestLoadSeedPwdGenerated(t *testing.T) {
+	t.Setenv("SEED_DEFAULT_PWD", "")
+	cfg := config.Load()
+	if !cfg.SeedPwdGenerated {
+		t.Fatal("SeedPwdGenerated = false, want true при пустом SEED_DEFAULT_PWD")
+	}
+	if len(cfg.SeedDefaultPwd) < 16 {
+		t.Errorf("сгенерированный пароль слишком короткий: %q", cfg.SeedDefaultPwd)
+	}
+	if second := config.Load(); second.SeedDefaultPwd == cfg.SeedDefaultPwd {
+		t.Error("генерация не случайна: два Load вернули одинаковый пароль")
 	}
 }
 
@@ -60,6 +72,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.SeedDefaultPwd != "secret-pwd" {
 		t.Errorf("SeedDefaultPwd = %q", cfg.SeedDefaultPwd)
+	}
+	if cfg.SeedPwdGenerated {
+		t.Error("SeedPwdGenerated = true при явно заданном SEED_DEFAULT_PWD")
 	}
 	if !cfg.CookieSecure {
 		t.Error("COOKIE_SECURE=true should enable CookieSecure")
