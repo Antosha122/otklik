@@ -1,0 +1,9 @@
+{
+  "name": "otklik-web",
+  "private": true,
+  "type": "module",
+  "description": "Фронтенд otklik без сборки (ES-модули); package.json нужен для node --test.",
+  "scripts": {
+    "test": "node --test internal/httpapi/web/assets/js/core/errors.test.mjs"
+  }
+}

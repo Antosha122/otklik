@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: go build/vet/test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+  integration:
+    name: go integration (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: otklik
+          POSTGRES_PASSWORD: otklik
+          POSTGRES_DB: otklik
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U otklik"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      OTKLIK_IT_DATABASE_URL: postgres://otklik:otklik@localhost:5432/otklik?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -tags integration ./internal/httpapi -count=1
+
+  js:
+    name: node tests (frontend core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test internal/httpapi/web/assets/js/core/errors.test.mjs
