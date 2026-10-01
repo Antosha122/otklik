@@ -940,3 +940,48 @@ func TestIT_PurgeExpiredSessions(t *testing.T) {
 		t.Errorf("живая сессия заявителя повреждена: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// Личный кабинет сотрудника: /api/profile собирает карточку профиля,
+// аналитику (оператор/эксперт), нагрузку (эксперт) и журнал последних действий.
+func TestIT_Profile(t *testing.T) {
+	e := newIT(t)
+
+	// Без сессии эндпоинт закрыт.
+	e.mustDo(e.staff, "GET", "/api/profile", "", nil, nil, http.StatusUnauthorized)
+
+	// Эксперт, у которого есть действия по обращению.
+	appealID, _ := e.createAppeal("Профиль: тестовое обращение", "")
+	opTok, expTok := e.toAnswerReady(appealID)
+
+	w := e.mustDo(e.staff, "GET", "/api/profile", expTok, nil, nil, http.StatusOK)
+	body := w.Body.String()
+	for _, want := range []string{`"role":"expert"`, `"workload"`, `"stats"`, `"recent_events"`, `"event_type":"status"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("профиль эксперта: нет %s: %s", want, body)
+		}
+	}
+
+	// Оператору нагрузка не нужна, аналитика — есть.
+	w = e.mustDo(e.staff, "GET", "/api/profile", opTok, nil, nil, http.StatusOK)
+	if body := w.Body.String(); strings.Contains(body, `"workload"`) {
+		t.Errorf("профиль оператора не должен содержать workload: %s", body)
+	} else if !strings.Contains(body, `"role":"operator"`) || !strings.Contains(body, `"stats"`) {
+		t.Errorf("профиль оператора неполный: %s", body)
+	}
+
+	// Администратору — карточка и журнал, без аналитики и нагрузки.
+	adminTok := e.login("admin")
+	w = e.mustDo(e.staff, "GET", "/api/profile", adminTok, nil, nil, http.StatusOK)
+	if body := w.Body.String(); strings.Contains(body, `"workload"`) || strings.Contains(body, `"stats"`) {
+		t.Errorf("профиль админа не должен содержать workload/stats: %s", body)
+	} else if !strings.Contains(body, `"role":"admin"`) || !strings.Contains(body, `"recent_events"`) {
+		t.Errorf("профиль админа неполный: %s", body)
+	}
+
+	// Страница кабинета отдаётся.
+	w = e.mustDo(e.staff, "GET", "/profile", expTok, nil, nil, http.StatusOK)
+	if !strings.Contains(w.Body.String(), "Личный кабинет") {
+		t.Errorf("страница /profile должна содержать заголовок: %s", w.Body.String()[:200])
+	}
+}
+

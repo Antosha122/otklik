@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef1f6">
+<title>Отклик — личный кабинет</title>
+<link rel="stylesheet" href="/assets/css/base.css">
+<link rel="stylesheet" href="/assets/css/components.css">
+<link rel="stylesheet" href="/assets/css/layout.css">
+<link rel="stylesheet" href="/assets/css/responsive.css">
+</head>
+<body data-page="profile" data-ui-mode="__OTKLIK_UI_MODE__">
+<script src="/assets/js/boot.js"></script>
+<header>
+  <div class="top">
+    <h1>Отклик</h1>
+    <div class="who" id="whoami">анонимно</div>
+  </div>
+</header>
+<main>
+<section id="secStaff">
+  <div class="card" id="stHome">
+    <div class="panel-head">
+      <h2>Личный кабинет</h2>
+      <div class="btnrow">
+        <a class="ghost small" id="navHomeLink" href="/operator">К панели</a>
+        <button class="ghost small" data-action="staff-change-password">Сменить пароль</button>
+        <button class="ghost small" data-action="staff-logout">Выйти</button>
+      </div>
+    </div>
+
+    <div class="panel-head">
+      <h3>Профиль</h3>
+      <button class="ghost small" data-action="reload-profile">Обновить</button>
+    </div>
+    <div id="prInfo" class="note"></div>
+
+    <div id="prWorkloadCard" class="hidden">
+      <hr class="divider">
+      <div class="panel-head"><h3>Моя нагрузка</h3></div>
+      <div id="prWorkload" class="note"></div>
+    </div>
+
+    <div id="prStatsCard" class="hidden">
+      <hr class="divider">
+      <div class="panel-head"><h3>Моя аналитика</h3></div>
+      <div id="prStats" class="note"></div>
+    </div>
+
+    <hr class="divider">
+    <div class="panel-head"><h3>Последние действия</h3></div>
+    <div id="prEvents" class="note"></div>
+    <div class="form-foot"><button class="ghost small" data-action="export-csv">Выгрузить CSV</button></div>
+  </div>
+</section>
+</main>
+<script type="module" src="/assets/js/main.js"></script>
+</body>
+</html>

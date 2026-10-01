@@ -239,6 +239,7 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 	r.Get("/admin", s.pageFor("staff", "admin.html"))
 	r.Get("/detail", s.pageFor("staff", "detail.html"))
 	r.Get("/detail/*", s.pageFor("staff", "detail.html"))
+	r.Get("/profile", s.pageFor("staff", "profile.html"))
 	r.Handle("/assets/*", assetsHandler())
 	r.Get("/api/categories", s.handlePublicCategories)
 
@@ -252,6 +253,7 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 		r.Use(s.requireRole(domain.RoleExpert, domain.RoleOperator, domain.RoleAdmin))
 		r.Get("/api/staff/experts", s.handleListExperts)
 		r.Get("/api/export/appeals", s.handleExportAppeals)
+		r.Get("/api/profile", s.handleProfile)
 	})
 
 	r.Group(func(r chi.Router) {

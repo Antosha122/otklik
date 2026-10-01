@@ -31,7 +31,8 @@ async function fetchMe() {
 
 // Гард страницы: без сессии — на вход, с чужой ролью — на свою домашнюю страницу.
 // С несменённым демо-паролем — на /login, там же предлагается смена.
-async function guardPage(roles) {
+// Экспортируется для страницы личного кабинета (staff/profile.js).
+export async function guardPage(roles) {
   const me = await fetchMe();
   if (!me) {
     location.replace('/login');
