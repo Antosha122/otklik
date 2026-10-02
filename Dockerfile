@@ -1,11 +1,15 @@
 # ---- Сборка ----
 FROM golang:1.24-alpine AS build
+# Версия сборки (git short hash): видна в /api/health и в версии кэша SW.
+ARG OTKLIK_VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY vendor/ vendor/
 COPY cmd/ cmd/
 COPY internal/ internal/
-RUN CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/otklik ./cmd/server
+RUN CGO_ENABLED=0 go build -mod=vendor -trimpath \
+    -ldflags="-s -w -X otklik/internal/buildinfo.Version=${OTKLIK_VERSION}" \
+    -o /out/otklik ./cmd/server
 
 # ---- Рантайм ----
 FROM alpine:3.20

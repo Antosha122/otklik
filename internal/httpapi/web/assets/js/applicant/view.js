@@ -10,9 +10,66 @@ export const viewPoller = createPoller(loadApplicantView, 5000);
 
 const TERMINAL = ['completed', 'rejected', 'closed_no_response'];
 
+// --- Уведомления о новых сообщениях специалиста (пока страница открыта) ---
+// Notification API показывает системное уведомление, когда вкладка в фоне.
+// Это не Web Push: работает, пока браузер держит страницу живой, зато без
+// серверной инфраструктуры и криптографии — безопасно для анонимности.
+let lastMsgCount = -1;
+let notifyWanted = false;
+
+function initNotifyButton() {
+  const btn = $('avNotifyBtn');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  if (!('Notification' in window)) {
+    btn.classList.add('hidden');
+    return;
+  }
+  syncNotifyLabel(btn);
+  btn.classList.remove('hidden'); // скрыта только если API нет вовсе
+  btn.addEventListener('click', () => {
+    if (Notification.permission !== 'granted') {
+      Notification.requestPermission().then((p) => {
+        if (p === 'granted') {
+          notifyWanted = true;
+          syncNotifyLabel(btn);
+          toast(t('Уведомим, если придёт ответ', 'Уведомим о новых сообщениях'));
+        } else {
+          toast(t('Разрешение на уведомления не выдано', 'Разрешение на уведомления не выдано'));
+        }
+      });
+      return;
+    }
+    notifyWanted = !notifyWanted;
+    syncNotifyLabel(btn);
+  });
+}
+
+function syncNotifyLabel(btn) {
+  btn.textContent = notifyWanted
+    ? '🔕 Выключить уведомления'
+    : '🔔 Уведомлять о новых сообщениях';
+}
+
+function maybeNotify(msgs) {
+  if (lastMsgCount < 0 || msgs.length <= lastMsgCount || !notifyWanted) return;
+  const last = msgs[msgs.length - 1];
+  if (!document.hidden || last.author_type === 'applicant') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification('Отклик — новое сообщение', {
+      body: (last.text || '').slice(0, 120),
+      icon: '/assets/icons/icon-192.png',
+      tag: 'otklik-message',
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) { /* отдельные браузеры запрещают — тихо игнорируем */ }
+}
+
 const fmtSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(n / 1024)) + ' КБ';
 
 export async function loadApplicantView() {
+  initNotifyButton();
   let v;
   try { v = await api('GET', '/api/appeals/me/'); } catch (e) { return; }
   applyTone(v.applicant_type);
@@ -52,6 +109,7 @@ export async function loadApplicantView() {
     `<div class="msg ${m.author_type === 'applicant' ? 'mine' : ''}"><div class="a">${esc(ruAuthor(m.author_type))} · ${fmtTime(m.created_at)}</div>${esc(m.text)}</div>`).join('')
     || '<div class="note">пока нет сообщений</div>';
   $('avMsgs').scrollTop = 1e9;
+  maybeNotify(v.messages || []);
   $('avResultBlock').classList.toggle('hidden', v.status !== 'answer_ready');
   // ТЗ 5.1: число возвратов ограничено — прячем «Не помогло» при исчерпании лимита.
   const limitReached = v.status === 'answer_ready' && v.return_count >= (v.max_returns != null ? v.max_returns : 2);
