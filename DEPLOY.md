@@ -152,6 +152,64 @@ server {
 Выключенный caddy можно в любой момент включить (одиночный сервер):
 `docker compose --profile edge up -d` — но тогда 80/443 должны быть свободны.
 
+#### 3.1.1. Временно без домена (доступ по IP)
+
+Пока домена нет: сертификат самоподписанный (предупреждение браузера — норма),
+сайты разводятся по портам, т.к. на одном IP их не отличить. COOKIE_SECURE
+оставляем 1 — куки работают по https даже с самоподписанным сертификатом.
+
+```bash
+# 1) самоподписанный сертификат на IP сервера (825 дней, SAN обязателен)
+IP=$(curl -s ifconfig.me)
+mkdir -p /etc/nginx/ssl
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -keyout /etc/nginx/ssl/otklik-ip.key -out /etc/nginx/ssl/otklik-ip.crt \
+  -days 825 -subj "/CN=$IP" -addext "subjectAltName=IP:$IP"
+
+# 2) vhost: заявители https://IP:8443, сотрудники https://IP:8444
+cat > /etc/nginx/sites-available/otklik <<EOF
+server {
+    listen 8443 ssl;
+    server_name $IP;
+    ssl_certificate     /etc/nginx/ssl/otklik-ip.crt;
+    ssl_certificate_key /etc/nginx/ssl/otklik-ip.key;
+    client_max_body_size 12m;
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+server {
+    listen 8444 ssl;
+    server_name $IP;
+    ssl_certificate     /etc/nginx/ssl/otklik-ip.crt;
+    ssl_certificate_key /etc/nginx/ssl/otklik-ip.key;
+    client_max_body_size 12m;
+    location /metrics { return 404; }
+    location / {
+        proxy_pass http://127.0.0.1:8091;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/otklik /etc/nginx/sites-enabled/otklik
+nginx -t && systemctl reload nginx
+```
+
+3) В панели облака открыть TCP-порты 8443 и 8444 (security group).
+
+Ограничения периода: Web Push работает только в открытой вкладке (сервисам
+push самоподписанный origin ненадёжен — до домена), в браузере один раз
+принять предупреждение о сертификате.
+
+Когда появится домен: заменить оба блока на vhost'ы из 3.1 (server_name +
+сертификаты certbot) — в `.env` ничего менять не нужно: PUBLIC_SITE/STAFF_SITE
+использует только выключенный caddy.
+
 ## 4. Первый вход и учётные записи
 
 При первом старте создаются демо-аккаунты (`admin`, `operator`,
