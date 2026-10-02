@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,8 +37,21 @@ func NormalizeTrack(s string) string {
 	return b.String()
 }
 
-// В БД хранится только хеш: трек-номер — bearer credential.
+// HashTrack — легаси-режим (несолёный SHA-256): так хешировались номера до
+// появления TRACK_HMAC_KEY, поэтому функция нужна для проверки старых обращений.
 func HashTrack(number string) string {
 	h := sha256.Sum256([]byte(NormalizeTrack(number)))
 	return hex.EncodeToString(h[:])
+}
+
+// HashTrackWithKey считает хеш трек-номера для хранения в БД. С ключом —
+// HMAC-SHA256: при утечке базы офлайн-перебор номеров на GPU невозможен без
+// секрета сервера. Пустой ключ — совместимость (обычный SHA-256).
+func HashTrackWithKey(number, key string) string {
+	if key == "" {
+		return HashTrack(number)
+	}
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(NormalizeTrack(number)))
+	return hex.EncodeToString(mac.Sum(nil))
 }

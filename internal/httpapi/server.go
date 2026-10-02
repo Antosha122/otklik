@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"otklik/internal/buildinfo"
 	"otklik/internal/config"
 	"otklik/internal/domain"
 	"otklik/internal/store"
@@ -170,6 +171,7 @@ func baseRouter(cfg config.Config) *chi.Mux {
 	// RealIP сознательно не включаем: он слепо верит X-Forwarded-For, а тот
 	// подделывается клиентом. Адрес для рейт-лимитов считает clientIP —
 	// с доверием только приватным прокси (Caddy в docker-сети).
+	r.Use(metricsMiddleware)
 	r.Use(middleware.Recoverer)
 	r.Use(sameOrigin)
 	r.Use(securityHeaders(cfg))
@@ -177,7 +179,8 @@ func baseRouter(cfg config.Config) *chi.Mux {
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	// version — из buildinfo (-ldflags при сборке): удобно проверять выкат.
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 }
 
 func New(cfg config.Config, st *store.Store) http.Handler {
@@ -192,7 +195,7 @@ func New(cfg config.Config, st *store.Store) http.Handler {
 	r.Get("/new", s.pageFor("applicant", "new.html"))       // подача обращения
 	r.Get("/track", s.pageFor("applicant", "track.html"))   // вход по трек-номеру
 	r.Get("/appeal", s.pageFor("applicant", "appeal.html")) // чат и статус обращения
-	r.Get("/sw.js", swHandler())                             // PWA заявителя: service worker с корня (scope "/")
+	r.Get("/sw.js", swHandler())                            // PWA заявителя: service worker с корня (scope "/")
 	r.Handle("/assets/*", assetsHandler())
 	r.Get("/api/categories", s.handlePublicCategories)
 	r.Get("/api/intake-questions", func(w http.ResponseWriter, _ *http.Request) {
@@ -232,6 +235,9 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 	r.Use(s.authMW(true, false))
 
 	r.Get("/api/health", healthHandler)
+	// Метрики (Prometheus) — только на служебном порту: счётчики HTTP-запросов,
+	// версия сборки, аптайм. Публичный порт их не отдаёт.
+	r.Get("/metrics", metricsHandler)
 	// Страницы сотрудника: вход, отдельная панель под каждую роль и карточка обращения.
 	r.Get("/", s.pageFor("staff", "login.html")) // редирект на нужную панель делает JS
 	r.Get("/login", s.pageFor("staff", "login.html"))

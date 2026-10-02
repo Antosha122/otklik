@@ -85,6 +85,55 @@ func (st *Store) AutoCloseNoResponse(ctx context.Context) (int, error) {
 	}
 	defer tx.Rollback()
 
+	// Автозакрытие больше не молчаливое: сначала в чат падает предупреждение,
+	// и только спустя ~2 дня после него обращение закрывается. Ребёнок,
+	// вернувшийся на 15-й день, раньше обнаруживал бы закрытое обращение без
+	// объяснений. Префикс текста — маркер идемпотентности (второй раз то же
+	// сообщение не вставляется), а условие «предупреждение есть» в закрывающем
+	// запросе гарантирует паузу минимум в 2 дня между предупреждением и закрытием.
+	const warnPrefix = "⚠ Автозакрытие"
+	const warnText = "⚠ Автозакрытие: мы давно не видели вашего ответа. " +
+		"Если ситуация ещё актуальна — напишите любое сообщение, и обращение продолжится. " +
+		"Без ответа оно будет закрыто через 2 дня."
+	if set.NoResponseDays >= 3 {
+		warnCutoff := time.Now().AddDate(0, 0, -(set.NoResponseDays - 2))
+		rows, err := tx.QueryContext(ctx, `
+			SELECT a.id
+			FROM appeals a
+			WHERE a.status IN ('needs_clarification', 'answer_ready')
+			  AND COALESCE((SELECT max(m.created_at) FROM messages m
+			                WHERE m.appeal_id = a.id AND m.author_type = 'applicant'),
+			               a.created_at) < $1
+			  AND NOT EXISTS (SELECT 1 FROM messages w
+			                WHERE w.appeal_id = a.id AND w.author_type = 'operator'
+			                  AND w.text LIKE $2)
+			FOR UPDATE OF a`, warnCutoff, warnPrefix+"%")
+		if err != nil {
+			return 0, err
+		}
+		var warnIDs []uuid.UUID
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			warnIDs = append(warnIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+		for _, id := range warnIDs {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO messages (appeal_id, author_type, author_id, text)
+				VALUES ($1, 'operator', NULL, $2)`, id, warnText); err != nil {
+				return 0, err
+			}
+		}
+	}
+
 	rows, err := tx.QueryContext(ctx, `
 		SELECT a.id, a.status, a.version
 		FROM appeals a
@@ -92,8 +141,11 @@ func (st *Store) AutoCloseNoResponse(ctx context.Context) (int, error) {
 		  AND COALESCE((SELECT max(m.created_at) FROM messages m
 		                WHERE m.appeal_id = a.id AND m.author_type = 'applicant'),
 		               a.created_at) < $1
+		  AND EXISTS (SELECT 1 FROM messages w
+		                WHERE w.appeal_id = a.id AND w.author_type = 'operator'
+		                  AND w.text LIKE $2)
 		ORDER BY a.created_at
-		FOR UPDATE OF a`, cutoff)
+		FOR UPDATE OF a`, cutoff, warnPrefix+"%")
 	if err != nil {
 		return 0, err
 	}

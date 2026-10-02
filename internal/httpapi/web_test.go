@@ -63,6 +63,10 @@ func TestPWAAssets(t *testing.T) {
 	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Errorf("/sw.js: Cache-Control = %q, want no-cache", cc)
 	}
+	// Версия кэша SW подставляется из buildinfo (деплой => новое имя кэша).
+	if !strings.Contains(w.Body.String(), "otklik-dev") {
+		t.Errorf("/sw.js: версия кэша из buildinfo не подставлена, тело: %s", w.Body.String())
+	}
 
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/assets/manifest.webmanifest", nil))
@@ -77,6 +81,29 @@ func TestPWAAssets(t *testing.T) {
 	httpapi.NewStaff(testCfg(), nil).ServeHTTP(w, httptest.NewRequest("GET", "/sw.js", nil))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("staff GET /sw.js: код = %d, want 404 (PWA только у заявителя)", w.Code)
+	}
+}
+
+// Метрики Prometheus — только на служебном порту: наружный порт их не отдаёт
+// (приватные счётчики не должны светиться на публичном домене).
+func TestMetricsOnlyOnStaffPort(t *testing.T) {
+	w := httptest.NewRecorder()
+	httpapi.NewStaff(testCfg(), nil).ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("staff GET /metrics: код = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "http_requests_total") {
+		t.Errorf("/metrics: нет http_requests_total:\n%s", body)
+	}
+	if !strings.Contains(body, `otklik_build_info{version="dev"}`) {
+		t.Errorf("/metrics: нет otklik_build_info:\n%s", body)
+	}
+
+	w = httptest.NewRecorder()
+	httpapi.New(testCfg(), nil).ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("applicant GET /metrics: код = %d, want 404", w.Code)
 	}
 }
 

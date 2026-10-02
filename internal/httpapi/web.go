@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"otklik/internal/buildinfo"
 )
 
 //go:embed web
@@ -61,7 +63,10 @@ func swHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Service-Worker-Allowed", "/")
 		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(data)
+		// Версия кэша = версия сборки (buildinfo, -ldflags): после каждого
+		// деплоя SW получает новое имя кэша, activate чистит старые кэши —
+		// вручную поднимать CACHE_VERSION при релизе больше не нужно.
+		_, _ = w.Write([]byte(strings.ReplaceAll(string(data), "__OTKLIK_SW_CACHE__", buildinfo.Version)))
 	}
 }
 

@@ -33,6 +33,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Подстраховка на прод: эти два флага легко забыть выставить в .env.
+	if !cfg.CookieSecure {
+		slog.Warn("config: COOKIE_SECURE=0 — куки сессий уходят и по HTTP и могут быть перехвачены; на проде за Caddy обязательно COOKIE_SECURE=1")
+	}
+	if cfg.TrackHmacKey == "" {
+		slog.Warn("config: TRACK_HMAC_KEY не задан — хеши трек-номеров несолёные (SHA-256); задайте длинную случайную строку (обращения, созданные до ключа, останутся доступными)")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

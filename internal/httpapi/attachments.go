@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -136,7 +137,16 @@ func (s *Server) handleDownloadAttachment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.Header().Set("Content-Type", att.ContentType)
-	w.Header().Set("Content-Disposition", `inline; filename="attachment.bin"`)
+	// Картинки открываем inline, всё остальное (PDF, текст) — только загрузкой:
+	// PDF может содержать встроенные скрипты, и рендерить его same-origin
+	// рискованно. Sandbox-CSP дополнительно изолирует ответ, а nosniff ниже
+	// не даёт браузеру трактовать файл иначе, чем объявлено в Content-Type.
+	disp := "inline"
+	if !strings.HasPrefix(att.ContentType, "image/") {
+		disp = "attachment"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="attachment.bin"`, disp))
+	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(data)
 }

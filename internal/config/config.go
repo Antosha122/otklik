@@ -21,6 +21,10 @@ type Config struct {
 	SeedPwdGenerated bool
 	LogFormat        string // json (по умолчанию, для прода) или text (локальная разработка)
 	RetentionDays    int    // срок хранения терминальных обращений; 0 — хранить бессрочно
+	// TrackHmacKey: ключ HMAC для хешей трек-номеров (TRACK_HMAC_KEY). Без него
+	// хеши — несолёный SHA-256: при утечке БД номера можно перебрать офлайн.
+	// После включения старые обращения (созданные без ключа) остаются доступными.
+	TrackHmacKey string
 	// TotpEnabled: 2FA (TOTP) для сотрудников. По умолчанию выключена — на демо-стенде
 	// она мешает (код нужен при каждом входе); в проде включается TOTP_ENABLED=1.
 	TotpEnabled bool
@@ -77,5 +81,6 @@ func Load() Config {
 		LogFormat:        env("LOG_FORMAT", "json"),
 		RetentionDays:    retention,
 		TotpEnabled:      totpEnabled,
+		TrackHmacKey:     env("TRACK_HMAC_KEY", ""),
 	}
 }

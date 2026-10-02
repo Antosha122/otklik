@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"otklik/internal/domain"
 	"otklik/internal/store"
@@ -42,7 +45,9 @@ type appealCreatedResp struct {
 
 // handleCreateAppeal — анонимное создание обращения; трек-номер выдаётся ровно один раз и является единственным способом доступа заявителя.
 func (s *Server) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
-	if !s.rl.allow("appeal:"+clientIP(r), 5, time.Hour) {
+	// 20/час, а не 5: школьники за школьным NAT выходят в интернет с одного IP,
+	// и несколько классов с общим адресом не должны целиком упираться в лимит.
+	if !s.rl.allow("appeal:"+clientIP(r), 20, time.Hour) {
 		writeJSON(w, http.StatusTooManyRequests, errorResp{"too many appeals from this address"})
 		return
 	}
@@ -118,7 +123,7 @@ func (s *Server) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, err)
 			return
 		}
-		hash := domain.HashTrack(tn)
+		hash := domain.HashTrackWithKey(tn, s.cfg.TrackHmacKey)
 		if _, err := s.st.FindAppealIDByTrackHash(r.Context(), hash); err == domain.ErrNotFound {
 			trackNumber = tn
 			params.TrackHash = hash
@@ -163,15 +168,19 @@ func (s *Server) handleVerifyTrack(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResp{"track_number is required"})
 		return
 	}
-	appealID, err := s.st.FindAppealIDByTrackHash(r.Context(), domain.HashTrack(req.TrackNumber))
+	appealID, err := s.lookupTrackHash(r.Context(), req.TrackNumber)
 	if err != nil {
-		// Два лимита: минутный (5/мин, с задержкой при превышении) и часовой (20/час).
+		// Два лимита: минутный (5/мин) и часовой (20/час). ТЗ 4.7: при превышении —
+		// задержка перед следующей попыткой. Задержку делаем на клиенте
+		// (Retry-After), а не time.Sleep в горутине: спящий обработчик держит
+		// соединение и под ботом сам устраивает себе DoS.
 		if !s.rl.allow("trackmin:"+ip, 5, time.Minute) {
-			time.Sleep(3 * time.Second) // ТЗ 4.7: при превышении — задержка перед следующей попыткой
+			w.Header().Set("Retry-After", "60")
 			writeJSON(w, http.StatusTooManyRequests, errorResp{"too many attempts, try later"})
 			return
 		}
 		if !s.rl.allow("track:"+ip, 20, time.Hour) {
+			w.Header().Set("Retry-After", "3600")
 			writeJSON(w, http.StatusTooManyRequests, errorResp{"too many attempts, try later"})
 			return
 		}
@@ -192,4 +201,16 @@ func (s *Server) handleVerifyTrack(w http.ResponseWriter, r *http.Request) {
 	s.rl.reset("trackmin:" + ip)
 	s.setCookie(w, applicantCookie, token)
 	s.writeApplicantView(w, r, appealID)
+}
+
+// lookupTrackHash ищет обращение по трек-номеру с учётом ключа: новые обращения
+// хешируются HMAC-SHA256 (TRACK_HMAC_KEY), старые — SHA-256 без ключа, поэтому
+// при включении ключа на действующей базе оба варианта остаются рабочими.
+func (s *Server) lookupTrackHash(ctx context.Context, number string) (uuid.UUID, error) {
+	if s.cfg.TrackHmacKey != "" {
+		if id, err := s.st.FindAppealIDByTrackHash(ctx, domain.HashTrackWithKey(number, s.cfg.TrackHmacKey)); err == nil {
+			return id, nil
+		}
+	}
+	return s.st.FindAppealIDByTrackHash(ctx, domain.HashTrack(number))
 }

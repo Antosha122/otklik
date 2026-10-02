@@ -221,6 +221,60 @@ func TestDetectCrisis(t *testing.T) {
 	}
 }
 
+// Ложные срабатывания коротких маркеров: «нож» не должен срабатывать в
+// «ножницах», «оружие» — в «оружейном». Проверка — по границе слова
+// (CrisisWordMarkers), при этом падежные формы реальных слов ловятся.
+func TestDetectCrisisWordBoundary(t *testing.T) {
+	neutral := []string{
+		"принесли новые ножницы на труды",
+		"нужна ножовка для поделки",
+		"оружейный магазин рядом со школой",
+		"ножницы и клей для поделки",
+	}
+	for _, s := range neutral {
+		if domain.DetectCrisis(s) {
+			t.Errorf("DetectCrisis(%q) = true, want false (ложное срабатывание)", s)
+		}
+	}
+	// Настоящие словоформы (падежные окончания до 2 букв) — ловятся.
+	positive := []string{
+		"старшие угрожают ножом",
+		"он приехал с пистолетом",
+		"дома бьют за оценки",
+		"стало домашнее насилие",
+		"он сказал, что убьет меня",
+		"душит меня брат",
+	}
+	for _, s := range positive {
+		if !domain.DetectCrisis(s) {
+			t.Errorf("DetectCrisis(%q) = false, want true (словоформа)", s)
+		}
+	}
+}
+
+// HashTrackWithKey: HMAC отличается от несолёного SHA-256, стабилен для
+// одного номера и зависит от ключа — при утечке БД перебор без секрета невозможен.
+func TestHashTrackWithKey(t *testing.T) {
+	tn := "ОТК-X7KD-R9MF-Q3HP"
+	h1 := domain.HashTrackWithKey(tn, "secret-1")
+	h2 := domain.HashTrackWithKey(tn, "secret-1")
+	if h1 != h2 {
+		t.Error("HMAC должен быть детерминированным")
+	}
+	if domain.HashTrackWithKey(tn, "secret-2") == h1 {
+		t.Error("HMAC должен зависеть от ключа")
+	}
+	if h1 == domain.HashTrack(tn) {
+		t.Error("HMAC не должен совпадать с несолёным SHA-256")
+	}
+	if domain.HashTrackWithKey(tn, "") != domain.HashTrack(tn) {
+		t.Error("пустой ключ = легаси SHA-256 (совместимость)")
+	}
+	if domain.HashTrackWithKey(tn, "k") != domain.HashTrackWithKey("otk-x7kd-r9mf-q3hp", "k") {
+		t.Error("одинаковое написание номера должно давать одинаковый HMAC")
+	}
+}
+
 // Расширенные смысловые группы словаря: каждая группа должна срабатывать.
 func TestDetectCrisisExpandedMarkers(t *testing.T) {
 	positive := []string{
