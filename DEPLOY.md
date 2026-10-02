@@ -108,7 +108,7 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:8090;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
@@ -132,7 +132,7 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:8091;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
@@ -146,7 +146,10 @@ server {
   (loopback/приватных) прокси — nginx как раз такой, подделка XFF клиентом
   не работает, лимиты считают реальные адреса;
 - `Host` обязателен (CSRF-проверки same-origin), `X-Forwarded-Proto` — чтобы
-  приложение видело схему за прокси.
+  приложение видело схему за прокси. ВАЖНО: передаём `$http_host`, а не `$host`
+  — nginx в `$host` обрезает порт, а при доступе по IP:8443/8444 Origin браузера
+  содержит порт, и без него same-origin проверка отклонит вход (403
+  «это действие доступно только с сайта Отклик»).
 
 Проверка: `nginx -t && systemctl reload nginx`, затем чек-лист раздела 8.
 Выключенный caddy можно в любой момент включить (одиночный сервер):
@@ -176,7 +179,7 @@ server {
     client_max_body_size 12m;
     location / {
         proxy_pass http://127.0.0.1:8090;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
@@ -190,7 +193,7 @@ server {
     location /metrics { return 404; }
     location / {
         proxy_pass http://127.0.0.1:8091;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
