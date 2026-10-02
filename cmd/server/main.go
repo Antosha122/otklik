@@ -178,14 +178,23 @@ func main() {
 	}()
 
 	publicSrv := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           httpapi.New(cfg, st),
+		Addr:    cfg.ListenAddr,
+		Handler: httpapi.New(cfg, st),
+		// Таймауты — защита от медленных клиентов (slowloris) и зависших
+		// соединений. WriteTimeout щедрый: отдача вложений до 10 МБ на
+		// медленном мобильном канале; long-polling/SSE в приложении нет.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
 	}
 	staffSrv := &http.Server{
 		Addr:              cfg.StaffListenAddr,
 		Handler:           httpapi.NewStaff(cfg, st),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	run := func(name string, srv *http.Server) {

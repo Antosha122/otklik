@@ -16,6 +16,12 @@
 
 {$STAFF_SITE} {
 	encode zstd gzip
+	# /metrics (счётчики запросов, версия сборки) — без авторизации, наружу
+	# его не светим. Скрейпер Prometheus ходит с самого сервера на
+	# 127.0.0.1:8081/metrics — порт приложения опубликован только на localhost.
+	handle /metrics* {
+		respond 404
+	}
 	reverse_proxy app:8081
 }
 

@@ -1,3 +1,10 @@
+# Ротация логов: без лимита json-file-логи растут бесконечно и забивают диск.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
@@ -18,6 +25,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *default-logging
 
   app:
     build:
@@ -74,6 +82,11 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    # Бюджет graceful shutdown приложения — до 25 с (10 с серверы + до 15 с
+    # джанистор доканчивает удаление по ретеншну). Дефолтные 10 с Docker
+    # обрезали бы его посередине: stop_grace_period даёт докончить.
+    stop_grace_period: 30s
+    logging: *default-logging
 
   # Ночные бэкапы БД: pg_dump в кастомном формате (-Fc — сжатие и выборочное
   # восстановление), затем шифрование AES-256-CBC (openssl; ключ — BACKUP_KEY
@@ -124,6 +137,7 @@ services:
       retries: 2
       start_period: 3m
     restart: unless-stopped
+    logging: *default-logging
 
   # Внехостовая копия бэкапов (S3/облако/SFTP — куда умеет rclone). Один бэкап
   # на самом сервере не спасает от потери диска/хостинга. Профиль offsite —
@@ -167,6 +181,7 @@ services:
       retries: 2
       start_period: 5m
     restart: unless-stopped
+    logging: *default-logging
 
   # TLS-терминация: PUBLIC_SITE -> app:8080 (заявители), STAFF_SITE -> app:8081 (сотрудники).
   # Сайты задаются в .env (см. .env.example); домены — Let's Encrypt, IP — самоподписанный сертификат.
@@ -188,6 +203,7 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   pgdata:

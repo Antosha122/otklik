@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,7 +48,7 @@ func Migrate(ctx context.Context, d *sql.DB) error {
 				return fmt.Errorf("migrate %s: %w", e.Name(), err)
 			}
 		}
-		log.Printf("migrations: applied %s", e.Name())
+		slog.Info("migrations: applied", "file", e.Name())
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func Seed(ctx context.Context, d *sql.DB, defaultPwd string) error {
 				return err
 			}
 		}
-		log.Println("seed: categories created")
+		slog.Info("seed: categories created")
 	}
 
 	if userCount == 0 {
@@ -127,7 +127,7 @@ func Seed(ctx context.Context, d *sql.DB, defaultPwd string) error {
 				return err
 			}
 		}
-		log.Println("seed: users created (password from SEED_DEFAULT_PWD)")
+		slog.Info("seed: users created (password from SEED_DEFAULT_PWD)")
 	}
 	return nil
 }
