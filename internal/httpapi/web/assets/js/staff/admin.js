@@ -200,6 +200,38 @@ export async function loadComplaints() {
   } catch (e) { $('adComplaints').textContent = e.message; }
 }
 
+// Кризисные маркеры: редактируемый словарь детектора (детектор кэширует
+// словарь на минуту — новые маркеры применяются почти сразу).
+export async function loadCrisisMarkers() {
+  try {
+    const ms = (await api('GET', '/api/admin/crisis-markers')).markers || [];
+    const ruKind = (k) => (k === 'word' ? 'по границе слова' : 'подстрока');
+    $('adMarkers').innerHTML = ms.map((m) => `<div class="item" style="cursor:default">
+      <div class="l1"><span class="cat">${esc(m.text)}</span>
+        <button class="ghost small" data-action="admin-del-marker" data-arg="${esc(m.id)}">Удалить</button></div>
+      <div class="l2"><span>${esc(ruKind(m.kind))}</span></div>
+    </div>`).join('') || '<div class="note">словарь пуст — детектор работает на встроенных маркерах</div>';
+  } catch (e) { toast(e.message); }
+}
+
+async function adminAddMarker() {
+  const text = $('cmText').value.trim();
+  if (text.length < 2) { toast('Маркер должен быть не короче 2 символов'); return; }
+  try {
+    await api('POST', '/api/admin/crisis-markers', { kind: $('cmKind').value, text });
+    $('cmText').value = '';
+    toast('Маркер добавлен');
+    loadCrisisMarkers();
+  } catch (e) { toast(e.message); }
+}
+
+async function adminDeleteMarker(id) {
+  try {
+    await api('DELETE', '/api/admin/crisis-markers/' + id);
+    loadCrisisMarkers();
+  } catch (e) { toast(e.message); }
+}
+
 registerActions({
   'reload-admin-appeals': () => { adPage = 1; loadAdminAppeals(); },
   'pg-admin': (p) => { adPage = Math.max(1, Number(p) || 1); loadAdminAppeals(); },
@@ -208,6 +240,8 @@ registerActions({
   'admin-create-user': adminCreateUser,
   'admin-toggle-cat': adminToggleCat,
   'admin-create-category': adminCreateCategory,
+  'admin-add-marker': adminAddMarker,
+  'admin-del-marker': adminDeleteMarker,
   'reload-complaints': loadComplaints,
   'reload-stats': loadStats,
   'stats-period': setQuickPeriod,

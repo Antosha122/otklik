@@ -114,7 +114,7 @@ func (s *Server) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
 		params.Answers = append(params.Answers, ans)
 		texts = append(texts, ans.Answer)
 	}
-	params.CrisisDetected = domain.DetectCrisis(texts...)
+	params.CrisisDetected = s.detectCrisis(r.Context(), texts...)
 
 	var trackNumber string
 	for i := 0; i < 10; i++ {

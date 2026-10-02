@@ -137,7 +137,7 @@ func (s *Server) handleApplicantPostMessage(w http.ResponseWriter, r *http.Reque
 	resp := map[string]any{"message": msg}
 	// ТЗ «Кризисные обращения», п.1: маркеры в тексте помечают обращение.
 	// Если кризис проявился уже в чате — помечаем и сразу показываем помощь.
-	if !a.CrisisDetected && domain.DetectCrisis(strings.TrimSpace(req.Text)) {
+	if !a.CrisisDetected && s.detectCrisis(r.Context(), strings.TrimSpace(req.Text)) {
 		if err := s.st.FlagCrisisFromMessage(r.Context(), p.AppealID); err != nil {
 			writeErr(w, r, err)
 			return
@@ -167,7 +167,7 @@ func (s *Server) handleApplicantAppend(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResp{"addition is too long (max 4000 characters)"})
 		return
 	}
-	a, err := s.st.AppendDescription(r.Context(), p.AppealID, text, domain.DetectCrisis(text))
+	a, err := s.st.AppendDescription(r.Context(), p.AppealID, text, s.detectCrisis(r.Context(), text))
 	if err != nil {
 		writeErr(w, r, err)
 		return

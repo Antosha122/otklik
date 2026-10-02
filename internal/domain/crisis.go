@@ -65,31 +65,37 @@ func normalizeCrisisText(s string) string {
 }
 
 func DetectCrisis(texts ...string) bool {
+	return DetectCrisisWith(CrisisMarkers, CrisisWordMarkers, texts...)
+}
+
+// DetectCrisisWith — детектор на внешнем словаре (редактируемом администратором
+// в БД); встроенные списки — значения по умолчанию и «семена» для него.
+func DetectCrisisWith(substrings, words []string, texts ...string) bool {
 	for _, raw := range texts {
 		t := normalizeCrisisText(raw)
 		if t == "" {
 			continue
 		}
-		for _, m := range CrisisMarkers {
+		for _, m := range substrings {
 			if m != "" && strings.Contains(t, normalizeCrisisText(m)) {
 				return true
 			}
 		}
-		if matchWordMarker(t) {
+		if matchWordMarker(t, words) {
 			return true
 		}
 	}
 	return false
 }
 
-// matchWordMarker проверяет слова текста против CrisisWordMarkers: слово
+// matchWordMarker проверяет слова текста против word-маркеров: слово
 // совпадает, если начинается с маркера и длиннее максимум на 2 буквы
 // (падежные окончания). Слова выделяются как максимальные буквенные цепочки,
 // поэтому пунктуация («нож,») не мешает.
-func matchWordMarker(t string) bool {
+func matchWordMarker(t string, words []string) bool {
 	for _, word := range splitWords(t) {
 		wl := utf8.RuneCountInString(word)
-		for _, m := range CrisisWordMarkers {
+		for _, m := range words {
 			// Длины сравниваем в буквах (рунах), а не байтах: кириллица — 2 байта.
 			if strings.HasPrefix(word, m) && wl-utf8.RuneCountInString(m) <= 2 {
 				return true

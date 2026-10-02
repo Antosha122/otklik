@@ -107,6 +107,15 @@
       <div class="form-foot"><button class="act small" data-action="admin-save-settings">Сохранить</button></div>
       <div class="note">Лимит возвратов: после его исчерпания заявитель может только завершить обращение, оценить работу или пожаловаться. Автозакрытие: если заявитель не отвечает дольше указанного числа дней, система сама переводит обращение в «закрыто без ответа».</div>
       <hr class="divider">
+      <div class="panel-head"><h3>Кризисные маркеры</h3></div>
+      <div class="note">Слова и фразы, включающие блок экстренной помощи и пометку «срочное». «Подстрока» ловит словоформы («самоубийств» найдёт «самоубийством»), «по границе слова» — для коротких слов без ложных срабатываний («нож», но не «ножницы»). Изменения применяются в течение минуты.</div>
+      <div class="row">
+        <div><label>Тип</label><select id="cmKind"><option value="substring">подстрока</option><option value="word">по границе слова</option></select></div>
+        <div><label>Маркер</label><input type="text" id="cmText" maxlength="100"></div>
+      </div>
+      <div class="form-foot"><button class="act small" data-action="admin-add-marker">Добавить</button></div>
+      <div id="adMarkers"></div>
+      <hr class="divider">
       <div class="panel-head">
         <h3>Жалобы</h3>
         <button class="ghost small" data-action="reload-complaints">Обновить</button>
