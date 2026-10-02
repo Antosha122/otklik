@@ -14,6 +14,9 @@ const SERVER_ERRORS_RU = {
   'current_password and new_password are required': 'Укажите текущий и новый пароль',
   'password must be at least 8 characters': 'Пароль должен быть не короче 8 символов',
   'new password must differ from current': 'Новый пароль должен отличаться от текущего',
+  'password is too common, choose a less predictable one': 'Этот пароль слишком распространён — выберите менее предсказуемый',
+  'password must not contain the login': 'Пароль не должен содержать логин',
+  'password must not contain the service name': 'Пароль не должен содержать название сервиса (otklik)',
   'password change required': 'Требуется сменить пароль по умолчанию',
 
   'totp code required': 'Введите код двухфакторной аутентификации',
