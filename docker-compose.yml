@@ -18,8 +18,10 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       # Только loopback: порт нужен лишь для локальных интеграционных тестов,
-      # наружу (интернет) БД не торчит.
-      - "127.0.0.1:5433:5432"
+      # наружу (интернет) БД не торчит. На сервере с другими проектами порт
+      # 5433 может быть занят (например, чужим postgres) — переопределите
+      # в .env: OTKLIK_DB_PORT=5434.
+      - "127.0.0.1:${OTKLIK_DB_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U otklik -d otklik"]
       interval: 5s
@@ -66,9 +68,12 @@ services:
       # Контакт администратора для push-провайдеров (mailto:, опционально).
       PUSH_SUBJECT: "${PUSH_SUBJECT:-}"
     ports:
-      # Прямой доступ только с localhost; наружу всё идёт через caddy (TLS).
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
+      # Прямой доступ только с localhost; наружу всё идёт через TLS-прокси
+      # (встроенный caddy или хостовый nginx — см. DEPLOY.md раздел 3.1).
+      # На сервере с другими проектами порты 8080/8081 часто заняты —
+      # переопределите в .env: OTKLIK_PUBLIC_PORT=8090, OTKLIK_STAFF_PORT=8091.
+      - "127.0.0.1:${OTKLIK_PUBLIC_PORT:-8080}:8080"
+      - "127.0.0.1:${OTKLIK_STAFF_PORT:-8081}:8081"
     volumes:
       - appdata:/app/data
     depends_on:
@@ -185,9 +190,14 @@ services:
 
   # TLS-терминация: PUBLIC_SITE -> app:8080 (заявители), STAFF_SITE -> app:8081 (сотрудники).
   # Сайты задаются в .env (см. .env.example); домены — Let's Encrypt, IP — самоподписанный сертификат.
+  # Профиль edge: НЕ стартует в обычном `docker compose up -d`. Используется,
+  # когда otklik — единственный сайт на сервере и сам держит 80/443. Если порты
+  # 80/443 уже заняты (например, хостовым nginx с другими проектами), оставьте
+  # caddy выключенным и терминируйте TLS в своём nginx (см. DEPLOY.md раздел 3.1).
   caddy:
     image: caddy:2-alpine
     container_name: otklik-caddy
+    profiles: ["edge"]
     environment:
       PUBLIC_SITE: "${PUBLIC_SITE:-localhost}"
       STAFF_SITE: "${STAFF_SITE:-localhost:8443}"

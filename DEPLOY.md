@@ -74,6 +74,84 @@ docker compose ps          # все контейнеры healthy
 service worker — собирайте всегда с `OTKLIK_VERSION`, иначе после релизов
 у части пользователей останется старый кэш PWA.
 
+### 3.1. Общий сервер: host-nginx вместо встроенного Caddy
+
+Если на сервере уже работают другие проекты и порты 80/443 держит хостовый
+nginx (не docker) — встроенный `caddy` не нужен: он по умолчанию НЕ стартует
+(профиль `edge`). TLS терминирует ваш nginx, otklik сидит на 127.0.0.1.
+
+Конфликты портов решаются в `.env` (порты заняты другими проектами):
+
+```bash
+OTKLIK_PUBLIC_PORT=8090     # 8080 часто занят чужим бэкендом
+OTKLIK_STAFF_PORT=8091      # 8081 часто занят чужим фронтендом
+OTKLIK_DB_PORT=5434         # 5433 может быть занят чужим postgres
+```
+
+Дальше два vhost'а в nginx (`/etc/nginx/sites-available/`, симлинки в
+`sites-enabled/`; сертификаты — certbot, как для остальных ваших сайтов):
+
+```nginx
+# ---- заявители: PUBLIC_SITE -> 127.0.0.1:8090 ----
+server {
+    listen 80;
+    server_name otklik.example.com;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name otklik.example.com;
+    # ssl_certificate / ssl_certificate_key — certbot, как у ваших сайтов
+
+    # вложения до 10 МБ — дефолт nginx (1 МБ) режет загрузку
+    client_max_body_size 12m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ---- сотрудники: STAFF_SITE -> 127.0.0.1:8091 ----
+server {
+    listen 80;
+    server_name staff.otklik.example.com;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name staff.otklik.example.com;
+
+    client_max_body_size 12m;
+
+    # /metrics наружу закрыт (Prometheus-эндпоинт без авторизации);
+    # скрейпер ходит с сервера: curl 127.0.0.1:8091/metrics
+    location /metrics { return 404; }
+
+    location / {
+        proxy_pass http://127.0.0.1:8091;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Почему это безопасно:
+
+- приложение слушает только `127.0.0.1:8090/8091` — снаружи напрямую не достучаться;
+- рейт-лимиты считают адрес из `X-Forwarded-For` только от доверенных
+  (loopback/приватных) прокси — nginx как раз такой, подделка XFF клиентом
+  не работает, лимиты считают реальные адреса;
+- `Host` обязателен (CSRF-проверки same-origin), `X-Forwarded-Proto` — чтобы
+  приложение видело схему за прокси.
+
+Проверка: `nginx -t && systemctl reload nginx`, затем чек-лист раздела 8.
+Выключенный caddy можно в любой момент включить (одиночный сервер):
+`docker compose --profile edge up -d` — но тогда 80/443 должны быть свободны.
+
 ## 4. Первый вход и учётные записи
 
 При первом старте создаются демо-аккаунты (`admin`, `operator`,
