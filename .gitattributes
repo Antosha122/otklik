@@ -1,0 +1,3 @@
+# Скрипты обязаны иметь LF-концы строк: на Windows-рабочих копиях с
+# core.autocrlf=true CRLF сломал бы их на Linux-сервере.
+*.sh text eol=lf
