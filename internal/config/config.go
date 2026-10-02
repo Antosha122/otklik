@@ -28,6 +28,14 @@ type Config struct {
 	// TotpEnabled: 2FA (TOTP) для сотрудников. По умолчанию выключена — на демо-стенде
 	// она мешает (код нужен при каждом входе); в проде включается TOTP_ENABLED=1.
 	TotpEnabled bool
+	// VAPID-ключи Web Push (пара из одной генерации, см. cmd/vapidkeygen).
+	// Пустые — push выключен. После включения пару не меняют: смена отзывает
+	// все подписки браузеров (они переподпишутся при следующем визите).
+	VapidPublicKey  string
+	VapidPrivateKey string
+	// PushSubject — контакт в VAPID JWT (mailto:), на случай проблем
+	// push-провайдер сможет связаться с администратором.
+	PushSubject string
 }
 
 func env(key, def string) string {
@@ -82,5 +90,8 @@ func Load() Config {
 		RetentionDays:    retention,
 		TotpEnabled:      totpEnabled,
 		TrackHmacKey:     env("TRACK_HMAC_KEY", ""),
+		VapidPublicKey:   env("VAPID_PUBLIC_KEY", ""),
+		VapidPrivateKey:  env("VAPID_PRIVATE_KEY", ""),
+		PushSubject:      env("PUSH_SUBJECT", ""),
 	}
 }

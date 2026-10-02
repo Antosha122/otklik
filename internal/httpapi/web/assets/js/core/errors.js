@@ -104,6 +104,12 @@ const SERVER_ERRORS_RU = {
   'crisis flag is available to operator only': 'Кризисную пометку меняет только оператор',
   'detected must be true or false': 'Укажите новое значение кризисной пометки',
   'reason is required (min 5 characters)': 'Укажите причину (минимум 5 символов)',
+
+  'kind must be substring or word': 'Выберите тип маркера: подстрока или по границе слова',
+  'text length must be 2..100 characters': 'Маркер должен быть от 2 до 100 символов',
+  'marker id is invalid': 'Маркер указан неверно',
+  'invalid push subscription': 'Не удалось подписаться на уведомления — обновите страницу и попробуйте снова',
+  'endpoint is required': 'Не удалось отписаться от уведомлений',
 };
 
 // Фолбэк по HTTP-коду: когда тело без текста ошибки либо сообщение не из словаря.

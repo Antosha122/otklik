@@ -12,9 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"otklik/internal/config"
 	"otklik/internal/db"
 	"otklik/internal/httpapi"
+	"otklik/internal/push"
 	"otklik/internal/store"
 )
 
@@ -69,6 +72,35 @@ func main() {
 
 	st := store.New(d)
 
+	// Словарь кризисных маркеров: при первом старте наполняется встроенными
+	// значениями, дальше его редактирует администратор (панель /admin).
+	if err := st.EnsureCrisisMarkersSeeded(ctx); err != nil {
+		fatal("seed crisis markers", "error", err)
+	}
+
+	// Web Push: отправитель для джанистора (httpapi создаёт свой из того же
+	// конфига). nil — ключи VAPID не заданы, пуши выключены.
+	pushSender, err := push.NewSender(cfg.VapidPublicKey, cfg.VapidPrivateKey, cfg.PushSubject)
+	if err != nil {
+		fatal("push: некорректные VAPID-ключи", "error", err)
+	}
+	notifyAppeal := func(appealID uuid.UUID, title, body string) {
+		if pushSender == nil {
+			return
+		}
+		subs, err := st.PushSubscriptionsForAppeal(ctx, appealID)
+		if err != nil || len(subs) == 0 {
+			return
+		}
+		list := make([]push.Subscription, 0, len(subs))
+		for _, sub := range subs {
+			list = append(list, push.Subscription{Endpoint: sub.Endpoint, P256DH: sub.P256DH, Auth: sub.Auth})
+		}
+		for _, ep := range pushSender.Notify(ctx, list, push.Message{Title: title, Body: body, URL: "/appeal"}) {
+			_ = st.DeletePushSubscription(ctx, appealID, ep)
+		}
+	}
+
 	// ТЗ 5.1: «закрыто без ответа» переводит система — фоновый джоб
 	// закрывает обращения, где заявитель не возвращался дольше N дней.
 	// Он же раз в час подчищает истёкшие сессии (обе таблицы).
@@ -82,13 +114,21 @@ func main() {
 	go func() {
 		defer janitorWG.Done()
 		run := func() {
-			n, err := st.AutoCloseNoResponse(ctx)
+			res, err := st.AutoCloseNoResponse(ctx)
 			if err != nil {
 				if ctx.Err() == nil {
 					slog.Error("janitor: auto-close", "error", err)
 				}
-			} else if n > 0 {
-				slog.Info("janitor: closed appeals without applicant response", "count", n)
+			} else {
+				if len(res.Closed) > 0 {
+					slog.Info("janitor: closed appeals without applicant response", "count", len(res.Closed))
+				}
+				// Предупреждение об автозакрытии — самое важное push-уведомление:
+				// у заявителя ещё 2 дня, чтобы вернуться и спасти обращение.
+				for _, id := range res.Warned {
+					notifyAppeal(id, "Отклик — обращение скоро закроется",
+						"Мы давно не видели вашего ответа. Напишите сообщение, чтобы обращение продолжилось.")
+				}
 			}
 			if ctx.Err() != nil {
 				return

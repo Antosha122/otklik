@@ -45,6 +45,41 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// --- Web Push (RFC 8030/8291) ---
+// Сервер присылает зашифрованный JSON {title, body, url}. Показываем
+// системное уведомление; клик по нему открывает/фокусирует страницу обращения.
+// userVisibleOnly: каждое пришедшее push-сообщение обязано показывать
+// уведомление — иначе браузер отзовёт подписку.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { /* пустой/битый payload — дефолт */ }
+  event.waitUntil(self.registration.showNotification(data.title || 'Отклик', {
+    body: data.body || 'Новое событие по вашему обращению',
+    icon: '/assets/icons/icon-192.png',
+    badge: '/assets/icons/icon-192.png',
+    tag: data.tag || 'otklik-push', // один тег: уведомления заменяют друг друга, а не копятся
+    renotify: true,                 // ...но каждое новое снова привлекает внимание
+    data: { url: data.url || '/appeal' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/appeal';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      for (const c of cs) {
+        // Уже открытая страница обращения — просто фокусируем.
+        if (c.url.includes(url) && 'focus' in c) return c.focus();
+      }
+      for (const c of cs) {
+        if ('focus' in c && 'navigate' in c) return c.focus().then(() => c.navigate(url));
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;

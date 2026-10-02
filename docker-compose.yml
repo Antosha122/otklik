@@ -50,6 +50,13 @@ services:
       # и при утечке БД номера можно перебрать офлайн. ВАЖНО: после запуска
       # ключ не менять — обращения, созданные со старым ключом, потеряют вход.
       TRACK_HMAC_KEY: "${TRACK_HMAC_KEY:-}"
+      # Web Push: пара VAPID-ключей из одной генерации (go run ./cmd/vapidkeygen).
+      # Пустые — уведомления работают только в открытой вкладке (Notification API).
+      # ВАЖНО: после включения пару не менять — смена отзывает подписки браузеров.
+      VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
+      VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
+      # Контакт администратора для push-провайдеров (mailto:, опционально).
+      PUSH_SUBJECT: "${PUSH_SUBJECT:-}"
     ports:
       # Прямой доступ только с localhost; наружу всё идёт через caddy (TLS).
       - "127.0.0.1:8080:8080"
@@ -116,6 +123,49 @@ services:
       timeout: 10s
       retries: 2
       start_period: 3m
+    restart: unless-stopped
+
+  # Внехостовая копия бэкапов (S3/облако/SFTP — куда умеет rclone). Один бэкап
+  # на самом сервере не спасает от потери диска/хостинга. Профиль offsite —
+  # сервис не стартует в обычном `docker compose up -d`.
+  # Включение (один раз, на сервере):
+  #   1) положите ./rclone.conf с настроенным удалённым хранилищем
+  #      (например, `rclone config create offsite s3 ...`);
+  #   2) BACKUP_OFFSITE_REMOTE=offsite:otklik-backups в .env;
+  #   3) docker compose --profile offsite up -d.
+  backup-offsite:
+    image: rclone/rclone:1.67
+    container_name: otklik-backup-offsite
+    profiles: ["offsite"]
+    environment:
+      # Пустое по умолчанию: обычный `docker compose up -d` не должен падать
+      # из-за не настроенного (опционального) сервиса. Если сервис включён
+      # профилем offsite, а переменная пуста — скрипт ниже завершится с ошибкой.
+      BACKUP_OFFSITE_REMOTE: "${BACKUP_OFFSITE_REMOTE:-}"
+    volumes:
+      - backups:/backups:ro
+      - ./rclone.conf:/config/rclone/rclone.conf:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ -z "$$BACKUP_OFFSITE_REMOTE" ]; then
+          echo "BACKUP_OFFSITE_REMOTE not set (see .env.example)"; exit 1
+        fi
+        while true; do
+          echo "offsite: copying backups to $$BACKUP_OFFSITE_REMOTE"
+          rclone copy /backups "$$BACKUP_OFFSITE_REMOTE" --transfers 4
+          touch /tmp/offsite-ok
+          sleep 86400
+        done
+    # Freshness-проверка: маркер успешной копии не старше 25 часов. Если rclone
+    # молча падает (напр., кончилось место в облаке), это видно в docker ps.
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp -maxdepth 1 -name offsite-ok -mmin -1500 | grep -q ."]
+      interval: 30m
+      timeout: 10s
+      retries: 2
+      start_period: 5m
     restart: unless-stopped
 
   # TLS-терминация: PUBLIC_SITE -> app:8080 (заявители), STAFF_SITE -> app:8081 (сотрудники).

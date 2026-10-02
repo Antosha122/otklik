@@ -65,7 +65,19 @@ func (s *Server) handleStaffPostMessage(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, err)
 		return
 	}
+	// Web Push заявителю: сообщение от специалиста — самый важный триггер
+	// (ответ мог ждать часами, а вкладка заявителя закрыта).
+	s.notifyApplicantAsync(id, "Отклик — новое сообщение", preview(req.Text, 120))
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// preview обрезает текст уведомления по границе руна, не ломая кириллицу.
+func preview(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return string(r)
+	}
+	return string(r[:max]) + "…"
 }
 
 type noteReq struct {

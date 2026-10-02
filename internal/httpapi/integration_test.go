@@ -174,7 +174,7 @@ func newIT(t *testing.T) *itEnv {
 		SessionTTL: time.Hour,
 		// 2FA в интеграционных тестах включена: сценарий TestIT_TOTP
 		// проверяет полный цикл setup→enable→login.
-		TotpEnabled: true,
+		TotpEnabled:    true,
 		AttachmentsDir: t.TempDir(),
 		// Демо-пароль сервера совпадает с сид-паролём: тест обязательной смены
 		// и сверка флага с фактом работают на тех же данных.
@@ -926,12 +926,12 @@ func TestIT_JanitorAutoClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := e.st.AutoCloseNoResponse(ctx)
+	res, err := e.st.AutoCloseNoResponse(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if closed < 1 {
-		t.Fatalf("janitor закрыл %d обращений, want >= 1", closed)
+	if len(res.Closed) < 1 {
+		t.Fatalf("janitor закрыл %d обращений, want >= 1", len(res.Closed))
 	}
 
 	// В одном прогоне повторный запуск не закрывает уже терминальные обращения.

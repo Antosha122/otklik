@@ -10,14 +10,31 @@ export const viewPoller = createPoller(loadApplicantView, 5000);
 
 const TERMINAL = ['completed', 'rejected', 'closed_no_response'];
 
-// --- Уведомления о новых сообщениях специалиста (пока страница открыта) ---
-// Notification API показывает системное уведомление, когда вкладка в фоне.
-// Это не Web Push: работает, пока браузер держит страницу живой, зато без
-// серверной инфраструктуры и криптографии — безопасно для анонимности.
+// --- Уведомления о новых сообщениях специалиста ---
+// Два режима работы кнопки:
+//  1) Web Push (если сервер включил его и браузер поддерживает PushManager):
+//     уведомления приходят даже при закрытой вкладке — их доставляет
+//     service worker (см. sw.js, обработчик push).
+//  2) Фолбэк Notification API: системное уведомление, когда вкладка открыта,
+//     но свёрнута в фон. Работает везде, где есть Notification.
 let lastMsgCount = -1;
-let notifyWanted = false;
+let notifyWanted = false;   // фолбэк-режим включён
+let pushSubscribed = false; // Web Push-подписка активна
+let pushCfg = { enabled: false, public_key: '' };
 
-function initNotifyButton() {
+const pushSupported = () =>
+  'serviceWorker' in navigator && 'PushManager' in window;
+
+// base64url (без паддинга) → Uint8Array для applicationServerKey.
+function urlB64ToUint8Array(b64) {
+  const padding = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function initNotifyButton() {
   const btn = $('avNotifyBtn');
   if (!btn || btn.dataset.bound) return;
   btn.dataset.bound = '1';
@@ -25,35 +42,88 @@ function initNotifyButton() {
     btn.classList.add('hidden');
     return;
   }
-  syncNotifyLabel(btn);
   btn.classList.remove('hidden'); // скрыта только если API нет вовсе
-  btn.addEventListener('click', () => {
-    if (Notification.permission !== 'granted') {
-      Notification.requestPermission().then((p) => {
-        if (p === 'granted') {
-          notifyWanted = true;
-          syncNotifyLabel(btn);
-          toast(t('Уведомим, если придёт ответ', 'Уведомим о новых сообщениях'));
-        } else {
-          toast(t('Разрешение на уведомления не выдано', 'Разрешение на уведомления не выдано'));
+  try { pushCfg = await api('GET', '/api/push/config') || pushCfg; } catch (e) { /* сервер без push */ }
+  // Уже есть живая подписка (с прошлого визита) — показываем активное состояние.
+  if (pushCfg.enabled && pushSupported() && Notification.permission === 'granted') {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub && sub.endpoint) pushSubscribed = true;
+    } catch (e) { /* SW не зарегистрирован — просто фолбэк-режим */ }
+  }
+  if (pushSubscribed) notifyWanted = false;
+  syncNotifyLabel(btn);
+  btn.addEventListener('click', toggleNotify);
+}
+
+async function toggleNotify() {
+  const btn = $('avNotifyBtn');
+  // Выключение: отписываемся от push и/или фолбэка.
+  if (pushSubscribed || notifyWanted) {
+    if (pushSubscribed && pushSupported()) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (sub) {
+          await api('DELETE', '/api/push/subscribe', { endpoint: sub.endpoint });
+          await sub.unsubscribe();
         }
-      });
-      return;
+      } catch (e) { toast(e.message); }
     }
-    notifyWanted = !notifyWanted;
+    pushSubscribed = false;
+    notifyWanted = false;
     syncNotifyLabel(btn);
-  });
+    toast(t('Уведомления выключены', 'Уведомления выключены'));
+    return;
+  }
+  // Включение: сначала разрешение браузера.
+  let perm = Notification.permission;
+  if (perm !== 'granted') perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    toast(t('Разрешение на уведомления не выдано', 'Разрешение на уведомления не выдано'));
+    return;
+  }
+  // Основной путь — Web Push: уведомления и при закрытой вкладке.
+  if (pushCfg.enabled && pushSupported()) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(pushCfg.public_key),
+      });
+      const j = sub.toJSON();
+      await api('POST', '/api/push/subscribe', {
+        endpoint: j.endpoint,
+        keys: { p256dh: j.keys.p256dh, auth: j.keys.auth },
+      });
+      pushSubscribed = true;
+      syncNotifyLabel(btn);
+      toast(t('Готово: сообщим, даже если приложение закрыто', 'Уведомления включены'));
+      return;
+    } catch (e) { /* браузер отказал в подписке — ниже фолбэк */ }
+  }
+  // Фолбэк: уведомления только пока вкладка жива.
+  notifyWanted = true;
+  syncNotifyLabel(btn);
+  toast(t('Уведомим, если придёт ответ (пока страница открыта)', 'Уведомим о новых сообщениях'));
 }
 
 function syncNotifyLabel(btn) {
-  btn.textContent = notifyWanted
+  btn.textContent = (pushSubscribed || notifyWanted)
     ? '🔕 Выключить уведомления'
     : '🔔 Уведомлять о новых сообщениях';
+  btn.title = pushSubscribed
+    ? 'Уведомления приходят даже при закрытом приложении'
+    : 'Показывать системные уведомления о новых сообщениях';
 }
 
 function maybeNotify(msgs) {
-  if (lastMsgCount < 0 || msgs.length <= lastMsgCount || !notifyWanted) return;
+  if (lastMsgCount < 0 || msgs.length <= lastMsgCount) return;
+  // Web Push уже показал уведомление из service worker — не дублируем.
+  if (pushSubscribed || !notifyWanted) { lastMsgCount = msgs.length; return; }
   const last = msgs[msgs.length - 1];
+  lastMsgCount = msgs.length;
   if (!document.hidden || last.author_type === 'applicant') return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try {

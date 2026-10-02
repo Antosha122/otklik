@@ -19,6 +19,7 @@ import (
 	"otklik/internal/buildinfo"
 	"otklik/internal/config"
 	"otklik/internal/domain"
+	"otklik/internal/push"
 	"otklik/internal/store"
 )
 
@@ -33,6 +34,14 @@ type Server struct {
 	st       *store.Store
 	rl       *rateLimiter
 	presence *presenceHub
+	// push — Web Push-отправитель; nil = push выключен (нет VAPID-ключей).
+	push *push.Sender
+	// Кэш словаря кризисных маркеров (админ редактирует в БД, детектор
+	// читает каждую секунду — без кэша был бы запрос к БД на каждый текст).
+	crisisMu    sync.Mutex
+	crisisSubs  []string
+	crisisWords []string
+	crisisAt    time.Time
 }
 
 // securityHeaders добавляет защитные заголовки ко всем ответам обоих портов.
@@ -184,7 +193,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func New(cfg config.Config, st *store.Store) http.Handler {
-	s := &Server{cfg: cfg, st: st, rl: newRateLimiter(), presence: newPresenceHub()}
+	s := &Server{cfg: cfg, st: st, rl: newRateLimiter(), presence: newPresenceHub(), push: newPushSender(cfg)}
 
 	r := baseRouter(cfg)
 	r.Use(s.authMW(false, true))
@@ -225,11 +234,20 @@ func New(cfg config.Config, st *store.Store) http.Handler {
 		})
 	})
 
+	// Web Push: подписка/отписка и публичный VAPID-ключ — только для
+	// аутентифицированного заявителя (подписка привязана к обращению).
+	r.Group(func(r chi.Router) {
+		r.Use(s.requireApplicant)
+		r.Get("/api/push/config", s.handlePushConfig)
+		r.Post("/api/push/subscribe", s.handlePushSubscribe)
+		r.Delete("/api/push/subscribe", s.handlePushUnsubscribe)
+	})
+
 	return r
 }
 
 func NewStaff(cfg config.Config, st *store.Store) http.Handler {
-	s := &Server{cfg: cfg, st: st, rl: newRateLimiter(), presence: newPresenceHub()}
+	s := &Server{cfg: cfg, st: st, rl: newRateLimiter(), presence: newPresenceHub(), push: newPushSender(cfg)}
 
 	r := baseRouter(cfg)
 	r.Use(s.authMW(true, false))
@@ -299,6 +317,11 @@ func NewStaff(cfg config.Config, st *store.Store) http.Handler {
 		r.Patch("/api/admin/categories/{categoryID}", s.handleAdminPatchCategory)
 		r.Get("/api/admin/complaints", s.handleAdminComplaints)
 		r.Get("/api/admin/stats", s.handleAdminStats)
+		// Редактируемый словарь кризисных маркеров: слова, включающие блок
+		// экстренной помощи и приоритет в очереди оператора.
+		r.Get("/api/admin/crisis-markers", s.handleAdminListCrisisMarkers)
+		r.Post("/api/admin/crisis-markers", s.handleAdminAddCrisisMarker)
+		r.Delete("/api/admin/crisis-markers/{markerID}", s.handleAdminDeleteCrisisMarker)
 	})
 	r.Route("/api/appeals/{appealID}", func(r chi.Router) {
 		r.Use(s.requireStaff)

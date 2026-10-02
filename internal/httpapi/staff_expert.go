@@ -83,6 +83,10 @@ func (s *Server) handlePublishRecommendation(w http.ResponseWriter, r *http.Requ
 		writeErr(w, r, err)
 		return
 	}
+	// Web Push заявителю: статус сменился на «готов ответ» — вернуться за
+	// рекомендацией стоит даже тому, кто не следил за чатом.
+	s.notifyApplicantAsync(id, "Отклик — специалист подготовил ответ",
+		"Откройте обращение, чтобы прочитать рекомендацию")
 	writeJSON(w, http.StatusOK, s.staffAppeal(r, a, p))
 }
 
