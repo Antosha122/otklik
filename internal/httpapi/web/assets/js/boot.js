@@ -41,6 +41,17 @@
       // Уже установлено (запущено из иконки) — кнопку не показываем.
       if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
       if (installEvt) b.classList.remove('hidden');
+      // iOS Safari не присылает beforeinstallprompt никогда: программная
+      // установка PWA на iPhone запрещена Apple. Единственный путь —
+      // «Поделиться → На экран “Домой”», поэтому вместо кнопки показываем
+      // подсказку с этими шагами. iPadOS 13+ прикидывается macOS — ловим
+      // его через touch-точки на «MacIntel».
+      var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOS) {
+        var h = document.getElementById('pwaIosHint');
+        if (h) h.classList.remove('hidden');
+      }
       b.addEventListener('click', function () {
         if (!installEvt) return;
         installEvt.prompt();
